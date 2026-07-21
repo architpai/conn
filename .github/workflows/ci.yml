@@ -19,8 +19,10 @@ jobs:
         run: '"$(swift build --show-bin-path)/conn-app-server-adapter-tests"'
       - name: Domain tests
         run: '"$(swift build --show-bin-path)/conn-domain-tests"'
-      - name: App core tests
-        run: '"$(swift build --show-bin-path)/conn-app-core-tests"'
+      # The app-core suite exercises macOS session and workspace behavior that
+      # requires an interactive login session. Run it as part of the local
+      # release gate documented in docs/releasing.md; hosted runners are
+      # intentionally limited to the portable suites below.
       - name: Release inspector tests
         run: ./scripts/test-inspect-release.sh
 
