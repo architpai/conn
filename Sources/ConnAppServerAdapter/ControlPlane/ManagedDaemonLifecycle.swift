@@ -80,6 +80,17 @@ public actor ManagedDaemonLifecycle {
             )
         }
 
+        if result.terminationStatus != 0,
+           let missingEndpoint = confirmedMissingControlSocket(from: result)
+        {
+            return ManagedDaemonStatus(
+                kind: .stopped,
+                report: nil,
+                endpointInspection: missingEndpoint,
+                detail: "The Codex-managed daemon is absent and its documented control socket is missing."
+            )
+        }
+
         guard result.terminationStatus == 0 else {
             return ManagedDaemonStatus(
                 kind: .unavailable,
@@ -122,6 +133,22 @@ public actor ManagedDaemonLifecycle {
                 detail: "Managed daemon returned unknown status '\(report.status)'."
             )
         }
+    }
+
+    private func confirmedMissingControlSocket(
+        from result: BoundedProcessRunner.Result
+    ) -> EndpointInspection? {
+        guard result.standardOutput.isEmpty else { return nil }
+        let expectedSocket = endpointDiscovery.expectedSocketURL(codexHome: codexHome)
+            .standardizedFileURL
+        let standardError = result.standardErrorString
+        guard standardError.contains(expectedSocket.path),
+              standardError.contains("No such file or directory (os error 2)")
+        else { return nil }
+
+        let inspection = endpointDiscovery.inspect(socketURL: expectedSocket)
+        guard inspection.status == .missing else { return nil }
+        return inspection
     }
 
     /// Returns immediately when already running. Only a confirmed stopped state can

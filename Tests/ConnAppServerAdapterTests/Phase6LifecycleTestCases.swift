@@ -7,6 +7,7 @@ enum Phase6LifecycleTestCases {
         await discoversOnlySafeSupportedExecutables(in: &suite)
         await boundsAndCancelsCommands(in: &suite)
         await startsOnlyAConfirmedStoppedDaemon(in: &suite)
+        await startsWhenVersionProbeReportsMissingControlSocket(in: &suite)
         await refusesMalformedAndUnsafeDaemonState(in: &suite)
     }
 
@@ -200,6 +201,22 @@ enum Phase6LifecycleTestCases {
             suite.check(malformed.status.kind == .malformed, "malformed status fails closed")
             suite.check(!malformed.startAttempted, "malformed status cannot trigger daemon start")
 
+            let unexpectedStart = root.appendingPathComponent("unexpected-start")
+            let unrelatedFailureScript = """
+            #!/bin/sh
+            if [ "$1 $2 $3" = "app-server daemon version" ]; then
+              printf '%s\n' 'permission denied while reading daemon state' >&2
+              exit 1
+            fi
+            touch '\(unexpectedStart.path)'
+            exit 0
+            """
+            try writeExecutable(unrelatedFailureScript, to: executableURL)
+            let unavailable = try await lifecycle.ensureRunning()
+            suite.check(unavailable.status.kind == .unavailable, "an unrelated failed probe remains unavailable")
+            suite.check(!unavailable.startAttempted, "an unrelated failed probe cannot trigger daemon start")
+            suite.check(!FileManager.default.fileExists(atPath: unexpectedStart.path), "unrelated probe failure performs no mutation")
+
             let outside = root.deletingLastPathComponent().appendingPathComponent("unexpected.sock")
             let runningScript = """
             #!/bin/sh
@@ -211,6 +228,81 @@ enum Phase6LifecycleTestCases {
             suite.check(!refused.startAttempted, "unsafe endpoint cannot trigger daemon mutation")
         } catch {
             suite.fail("malformed daemon fixture failed: \(error)")
+        }
+    }
+
+    private static func startsWhenVersionProbeReportsMissingControlSocket(
+        in suite: inout TestSuite
+    ) async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        do {
+            let controlDirectory = root.appendingPathComponent(
+                EndpointDiscovery.controlDirectoryName,
+                isDirectory: true
+            )
+            try FileManager.default.createDirectory(at: controlDirectory, withIntermediateDirectories: true)
+            guard chmod(controlDirectory.path, mode_t(0o700)) == 0 else {
+                suite.fail("could not secure missing-socket fixture directory")
+                return
+            }
+
+            let socket = controlDirectory.appendingPathComponent(EndpointDiscovery.controlSocketName)
+            let stagedSocket = root.appendingPathComponent("staged-control.sock")
+            let descriptor = try makeListeningUnixSocket(at: stagedSocket)
+            defer { close(descriptor) }
+            guard chmod(stagedSocket.path, mode_t(0o600)) == 0 else {
+                suite.fail("could not secure staged missing-socket fixture")
+                return
+            }
+
+            let log = root.appendingPathComponent("arguments.log")
+            let executableURL = root.appendingPathComponent("fake-codex")
+            let script = """
+            #!/bin/sh
+            printf '%s\n' "$*" >> '\(log.path)'
+            if [ "$1 $2 $3" = "app-server daemon version" ]; then
+              if [ -S '\(socket.path)' ]; then
+                printf '%s\n' '{"status":"running","backend":"pid","socketPath":"\(socket.path)","cliVersion":"0.144.6","appServerVersion":"0.144.6"}'
+                exit 0
+              fi
+              printf '%s\n' 'Error: failed to connect to \(socket.path)' >&2
+              printf '%s\n' 'Caused by:' >&2
+              printf '%s\n' '    No such file or directory (os error 2)' >&2
+              exit 1
+            fi
+            if [ "$1 $2 $3" = "app-server daemon start" ]; then
+              mv '\(stagedSocket.path)' '\(socket.path)'
+              exit 0
+            fi
+            exit 91
+            """
+            try writeExecutable(script, to: executableURL)
+            let lifecycle = ManagedDaemonLifecycle(
+                executable: .init(url: executableURL, version: .init(rawValue: "0.144.6")),
+                codexHome: root
+            )
+
+            let result = try await lifecycle.ensureRunning(
+                probeTimeout: .seconds(1),
+                startTimeout: .seconds(1)
+            )
+            suite.check(result.startAttempted, "a safely missing control socket starts the daemon")
+            suite.check(result.status.kind == .running, "missing-socket recovery validates the started daemon")
+            suite.check(result.status.endpoint?.socketURL == socket, "missing-socket recovery returns only the expected endpoint")
+
+            let arguments = try String(contentsOf: log, encoding: .utf8)
+                .split(separator: "\n").map(String.init)
+            suite.check(
+                arguments == [
+                    "app-server daemon version",
+                    "app-server daemon start",
+                    "app-server daemon version",
+                ],
+                "missing-socket recovery uses only version, one idempotent start, and revalidation"
+            )
+        } catch {
+            suite.fail("missing daemon socket fixture failed: \(error)")
         }
     }
 

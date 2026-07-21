@@ -6,6 +6,11 @@ public alpha releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- Recover the Codex-managed daemon after a reboot when its exact control socket
+  is absent and the version probe reports the corresponding `ENOENT` failure.
+
 ### Planned
 
 - Broader Codex App Server version compatibility.
