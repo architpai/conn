@@ -127,7 +127,7 @@ public struct AppServerDomainCommitIdentity: Equatable, Sendable {
 /// the commit closure has begun.
 public enum AppServerDomainCommitGate {
     @discardableResult
-    public static func performIfCurrent<Result>(
+    public static func performIfCurrent<Result: Sendable>(
         isolation: isolated (any Actor)? = #isolation,
         captured: AppServerDomainCommitIdentity,
         current: () -> AppServerDomainCommitIdentity?,
