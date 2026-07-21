@@ -4,6 +4,21 @@ Conn's public release target is a Developer ID signed, hardened-runtime,
 notarized, and stapled DMG. Never publish signing credentials or notarization
 profiles in the repository.
 
+## Run the local release gate
+
+Run the complete app-core suite on a Mac with an interactive login session;
+it exercises macOS workspace and session behavior that hosted CI cannot model.
+
+```sh
+swift run conn-app-server-adapter-tests
+swift run conn-domain-tests
+swift run conn-app-core-tests
+./scripts/test-inspect-release.sh
+pnpm install --frozen-lockfile
+pnpm web:build
+pnpm web:lint
+```
+
 ## Build and sign the app
 
 ```sh
