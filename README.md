@@ -2,6 +2,8 @@
 
 ![Conn — supervise Codex from the macOS notch](.github/assets/conn-banner.png)
 
+[Visit the Conn website](https://conn-umber.vercel.app/) · [Download the latest release](https://github.com/architpai/conn/releases/latest)
+
 Conn is a native macOS notch companion for supervising Codex while you work in
 other apps. It shows connected thread activity, surfaces supported permission
 and question requests, and lets you steer, follow up, or stop a turn without
