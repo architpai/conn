@@ -1,0 +1,47 @@
+# macOS and Swift
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcarchive
+.idea/
+
+# JavaScript
+node_modules/
+apps/*/dist/
+apps/*/*.tsbuildinfo
+
+# Local configuration and agent state
+.env
+.env.*
+!.env.example
+.agents/
+.codex/
+sessions.md
+*.log
+*.sqlite
+*.sqlite-*
+
+# Internal design and submission workspaces
+archive/
+marketing/
+mock/
+plans/
+*_RESULTS.md
+
+# Release output and signing material
+dist/
+*.dmg
+*.zip
+*.p12
+*.pem
+*.key
+*.cer
+*.mobileprovision
+*.provisionprofile
+
+# Retired local plugin build output
+plugins/sidequest/bin/
+plugins/sidequest/native/

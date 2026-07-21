@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-visual-direction="graphite">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conn · Notch Companion Mock</title>
+<link rel="stylesheet" href="styles.css?v=16">
+</head>
+<body>
+
+  <!-- Simulated macOS desktop -->
+  <div class="desktop" id="desktop">
+    <div class="menubar">
+      <div class="menubar-left">
+        <span class="mb-apple"></span>
+        <span class="mb-app">Codex</span>
+        <span class="mb-item">File</span>
+        <span class="mb-item">Edit</span>
+        <span class="mb-item">View</span>
+        <span class="mb-item">Window</span>
+        <span class="mb-item">Help</span>
+      </div>
+      <div class="menubar-right">
+        <span class="mb-item" id="mb-clock">Sat Jul 19&ensp;9:41 AM</span>
+      </div>
+    </div>
+
+    <!-- faint editor window for depth -->
+    <div class="faux-window" aria-hidden="true">
+      <div class="faux-titlebar">
+        <span class="tl tl-r"></span><span class="tl tl-y"></span><span class="tl tl-g"></span>
+        <span class="faux-title">ConnAppServerAdapter.swift</span>
+      </div>
+      <div class="faux-body">
+        <div class="faux-line" style="width:52%"></div>
+        <div class="faux-line" style="width:74%"></div>
+        <div class="faux-line" style="width:38%"></div>
+        <div class="faux-line" style="width:63%"></div>
+        <div class="faux-line" style="width:81%"></div>
+        <div class="faux-line" style="width:44%"></div>
+        <div class="faux-line" style="width:70%"></div>
+        <div class="faux-line" style="width:29%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ THE ISLAND ============ -->
+  <div class="island" id="island" data-state="collapsed">
+
+    <!-- constant black bar: logo left · hardware notch center · status dots right -->
+    <div class="island-bar" id="island-bar">
+      <div class="bar-left">
+        <svg class="conn-mark" viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <g class="conn-orbit-nodes">
+            <circle cx="8" cy="4.2" r="1.75" fill="currentColor"/>
+            <circle cx="8" cy="11.8" r="1.75" fill="currentColor"/>
+          </g>
+        </svg>
+        <span class="bar-word">conn</span>
+        <button class="bar-codex" data-codex title="Open in Codex">
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+            <path d="M6.5 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V9.5M9.5 2H14v4.5M14 2 7.5 8.5"
+                  fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="bar-gear" data-settings title="Settings">
+          <svg viewBox="0 0 16 16" width="12.5" height="12.5" aria-hidden="true">
+            <circle cx="8" cy="8" r="2.3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M8 1.7v2M8 12.3v2M1.7 8h2M12.3 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6 11 5M5 11l-1.4 1.4"
+                  stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="bar-notch" aria-hidden="true"></div>
+      <div class="bar-right" id="bar-dots" aria-label="thread status summary"></div>
+    </div>
+
+    <!-- transient event reaction; this does not create another interaction state -->
+    <div class="compact-activity" id="compact-activity" role="status" aria-live="polite" aria-atomic="true" aria-hidden="true">
+      <span class="activity-pulse" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="activity-copy">
+        <span class="activity-verb" id="activity-verb">Reading</span>
+        <span class="activity-detail" id="activity-detail">AppServerDomainModels.swift</span>
+      </span>
+      <span class="activity-progress" id="activity-progress" aria-hidden="true"></span>
+      <span class="activity-actions" id="activity-actions" hidden>
+        <button class="activity-reject" id="compact-reject" type="button">Reject</button>
+        <button class="activity-accept" id="compact-accept" type="button">Accept</button>
+      </span>
+    </div>
+
+    <!-- morphing body -->
+    <div class="island-body">
+
+      <!-- EXPANDED -->
+      <div class="workspace" id="workspace-panel">
+        <main class="chat">
+          <header class="chat-head">
+            <div class="thread-switcher-wrap">
+              <button class="thread-switcher" id="thread-switcher" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="dot" id="ws-dot"></span>
+                <span class="chat-title" id="ws-title">thread</span>
+                <svg class="thread-switcher-chev" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+                  <path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <div class="thread-menu" id="thread-menu" hidden>
+                <label class="thread-search">
+                  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.4 10.4 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                  <input id="thread-search" type="search" placeholder="Search threads or projects" autocomplete="off">
+                </label>
+                <div class="thread-menu-toolbar">
+                  <div class="thread-grouping" role="tablist" aria-label="Thread grouping">
+                    <button class="thread-group active" type="button" data-group="threads">Threads</button>
+                    <button class="thread-group" type="button" data-group="projects">By project</button>
+                  </div>
+                  <span id="thread-recency-label">Last 24 hours</span>
+                </div>
+                <div class="thread-menu-list" id="thread-menu-list" role="listbox"></div>
+              </div>
+            </div>
+            <button class="review-outcome" id="review-outcome" type="button" hidden>Mark reviewed</button>
+            <button class="new-chat" id="new-chat" type="button" title="Start an ephemeral chat in the default workspace">
+              <span aria-hidden="true">+</span>
+              <span>New chat</span>
+            </button>
+          </header>
+
+          <div class="transcript" id="transcript"><!-- per-thread logs injected --></div>
+
+          <section class="new-chat-panel" id="new-chat-panel" hidden>
+            <div class="new-chat-intro">
+              <div>
+                <h2>New chat</h2>
+                <p>Default workspace · <span id="new-chat-workspace">~/dev/conn</span></p>
+              </div>
+              <button class="native-button" id="cancel-new-chat" type="button">Cancel</button>
+            </div>
+            <div class="new-chat-empty">
+              <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><path d="M5 7.5h15a4 4 0 0 1 4 4v5a4 4 0 0 1-4 4h-8l-5 4v-4H5a4 4 0 0 1-4-4v-5a4 4 0 0 1 4-4Z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 4.5h14a4 4 0 0 1 4 4v5a4 4 0 0 1-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              <strong>Start a conversation</strong>
+              <span>Your first message creates the chat in the default workspace.</span>
+            </div>
+          </section>
+
+          <form class="composer" id="composer">
+            <select class="model-picker" id="model-picker" aria-label="Model for next message">
+              <option>GPT-5.6-Sol · Medium reasoning</option>
+              <option>GPT-5.3-Codex-Spark · Medium reasoning</option>
+              <option>GPT-5.4 · High reasoning</option>
+            </select>
+            <input class="composer-input" id="composer-input" type="text"
+                   placeholder="Message this thread" autocomplete="off" spellcheck="false">
+            <span class="ctx" id="ctx">
+              <svg class="ctx-ring" viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">
+                <circle class="ctx-track" cx="14" cy="14" r="12"/>
+                <circle class="ctx-arc" id="ctx-arc" cx="14" cy="14" r="12"/>
+              </svg>
+              <span class="ctx-pct" id="ctx-pct"></span>
+            </span>
+            <button class="btn btn-send" id="composer-action" type="submit" data-action="send" aria-label="send">
+              <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <path d="M8 13V3M4 7l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </form>
+        </main>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Settings dropdown (anchored under the island) -->
+  <div class="settings-pop" id="settings-pop">
+    <div class="set-head"><div class="set-title">Settings</div></div>
+    <label class="set-field" for="default-workspace">
+      <span class="set-label">Default workspace</span>
+      <input id="default-workspace" class="set-input" type="text" value="~/dev/conn" placeholder="/absolute/path/to/project" spellcheck="false" autocomplete="off">
+      <span class="set-help">New chats start here after you confirm a model and initial prompt.</span>
+    </label>
+    <div class="set-recency">
+      <span class="set-label">Thread recency</span>
+      <div class="set-recency-options">
+        <button class="set-recency-option selected" type="button" data-recency="Last 24 hours"><span>✓</span>Last 24 hours</button>
+        <button class="set-recency-option" type="button" data-recency="Last 3 days"><span></span>Last 3 days</button>
+        <button class="set-recency-option" type="button" data-recency="Last 7 days"><span></span>Last 7 days</button>
+        <button class="set-recency-option" type="button" data-recency="Last 30 days"><span></span>Last 30 days</button>
+        <button class="set-recency-option" type="button" data-recency="All threads"><span></span>All threads</button>
+      </div>
+      <span class="set-help">Active jobs stay visible regardless of this window.</span>
+    </div>
+    <div class="set-actions" aria-label="Conn settings">
+      <button class="native-button" type="button" data-setting-action="sync">Sync</button>
+      <button class="set-action" type="button" data-setting-action="labs"><span>▣&ensp;Shared Desktop Labs</span></button>
+    </div>
+    <label class="set-row" for="display-select">
+      <span class="set-label">Display</span>
+      <select class="set-select" id="display-select">
+        <option>Built-in display</option>
+        <option>Studio Display</option>
+      </select>
+    </label>
+    <div class="set-footer">
+      <button class="set-secondary" type="button" data-setting-action="pause">Pause Conn</button>
+      <button class="set-secondary" type="button" data-setting-action="hide">Hide Conn</button>
+    </div>
+  </div>
+
+  <!-- Mock controls -->
+  <div class="controls">
+    <div class="seg" role="tablist" aria-label="island state">
+      <button class="seg-btn" data-set-state="collapsed" role="tab">Collapsed</button>
+      <button class="seg-btn" data-set-state="expanded" role="tab">Expanded</button>
+    </div>
+  </div>
+  <p class="controls-hint">Mock only: tap the bar to expand or collapse · status pins open a matching thread · gear for settings</p>
+
+  <script src="app.js?v=16"></script>
+</body>
+</html>

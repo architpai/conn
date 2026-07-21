@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="430" viewBox="0 0 680 430">
+  <rect width="680" height="430" fill="#f3f5f3"/>
+  <path d="M0 0h680v5H0z" fill="#2dd4bf"/>
+
+  <text x="340" y="56" text-anchor="middle"
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif"
+        font-size="22" font-weight="650" letter-spacing="-0.4" fill="#101411">
+    Install Conn
+  </text>
+  <text x="340" y="82" text-anchor="middle"
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif"
+        font-size="13" font-weight="400" fill="#667069">
+    Drag Conn into Applications
+  </text>
+
+  <rect x="282" y="117" width="116" height="28" rx="14" fill="#d9f5f0"/>
+  <text x="340" y="136" text-anchor="middle"
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif"
+        font-size="10" font-weight="700" letter-spacing="1.2" fill="#117f73">
+    DRAG TO INSTALL
+  </text>
+
+  <path d="M276 226H398" fill="none" stroke="#2bbdab" stroke-width="4" stroke-linecap="round"/>
+  <path d="M389 215l12 11-12 11" fill="none" stroke="#2bbdab" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="276" cy="226" r="5" fill="#2bbdab"/>
+
+  <text x="340" y="385" text-anchor="middle"
+        font-family="ui-monospace, 'SF Mono', Menlo, monospace"
+        font-size="10" letter-spacing="0.5" fill="#929a94">
+    CONN  ·  macOS 15+
+  </text>
+</svg>

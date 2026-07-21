@@ -1,0 +1,55 @@
+{
+  "entries" : [
+    {
+      "direction" : "client_to_server",
+      "envelope" : "request",
+      "method" : "initialize",
+      "sequence" : 1,
+      "syntheticRequestID" : "req-001"
+    },
+    {
+      "direction" : "server_to_client",
+      "envelope" : "response",
+      "method" : "initialize",
+      "sequence" : 2,
+      "syntheticRequestID" : "req-001"
+    },
+    {
+      "direction" : "client_to_server",
+      "envelope" : "notification",
+      "method" : "initialized",
+      "sequence" : 3
+    },
+    {
+      "direction" : "client_to_server",
+      "envelope" : "request",
+      "method" : "thread/list",
+      "sequence" : 4,
+      "syntheticRequestID" : "req-002"
+    },
+    {
+      "direction" : "server_to_client",
+      "envelope" : "response",
+      "method" : "thread/list",
+      "sequence" : 5,
+      "syntheticRequestID" : "req-002"
+    }
+  ],
+  "fixture" : "conn-phase5-sanitized",
+  "matrix" : {
+    "entries" : [
+      {
+        "check" : "stable.handshake",
+        "evidence" : [
+          "initialize.once",
+          "initialized.after-response",
+          "reasoning-text-delta.opted-out"
+        ],
+        "result" : "Pass"
+      }
+    ],
+    "overall" : "Pass",
+    "schemaVersion" : 1
+  },
+  "schemaVersion" : 1
+}

@@ -1,0 +1,14 @@
+{
+  "name": "conn-monorepo",
+  "private": true,
+  "packageManager": "pnpm@10.13.1",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "web:dev": "pnpm --filter @conn/web dev",
+    "web:build": "pnpm --filter @conn/web build",
+    "web:start": "pnpm --filter @conn/web start",
+    "web:lint": "pnpm --filter @conn/web lint"
+  }
+}

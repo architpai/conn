@@ -1,0 +1,33 @@
+{
+  "experimental": {
+    "experimentalApiIncluded": true,
+    "experimentalApiValue": true,
+    "optOutNotificationMethods": [
+      "item/reasoning/textDelta"
+    ],
+    "retainedNotificationMethods": [
+      "item/reasoning/summaryTextDelta",
+      "thread/status/changed",
+      "turn/started",
+      "turn/completed",
+      "item/started",
+      "item/completed",
+      "serverRequest/resolved"
+    ]
+  },
+  "stable": {
+    "experimentalApiIncluded": false,
+    "optOutNotificationMethods": [
+      "item/reasoning/textDelta"
+    ],
+    "retainedNotificationMethods": [
+      "item/reasoning/summaryTextDelta",
+      "thread/status/changed",
+      "turn/started",
+      "turn/completed",
+      "item/started",
+      "item/completed",
+      "serverRequest/resolved"
+    ]
+  }
+}

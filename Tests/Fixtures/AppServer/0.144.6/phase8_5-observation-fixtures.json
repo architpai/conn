@@ -1,0 +1,132 @@
+{
+  "codexVersion": "0.144.6",
+  "threadListPages": [
+    {
+      "sequence": 10,
+      "result": {
+        "data": [
+          {
+            "id": "thread-alpha",
+            "sessionId": "session-alpha",
+            "cliVersion": "0.144.6",
+            "name": "Alpha work",
+            "preview": "PHASE85_PREVIEW_MUST_NOT_CROSS_ADAPTER",
+            "cwd": "/tmp/projects/alpha",
+            "gitInfo": {
+              "branch": "main",
+              "originUrl": "https://credential-canary@example.invalid/private.git",
+              "sha": "0123456789abcdef"
+            },
+            "modelProvider": "openai",
+            "source": "appServer",
+            "status": { "type": "idle" },
+            "ephemeral": false,
+            "createdAt": 1820000000,
+            "updatedAt": 1820000001,
+            "recencyAt": 1820000002,
+            "turns": []
+          }
+        ],
+        "nextCursor": "cursor-empty",
+        "backwardsCursor": null
+      }
+    },
+    {
+      "sequence": 11,
+      "result": {
+        "data": [],
+        "nextCursor": "cursor-final",
+        "backwardsCursor": null
+      }
+    },
+    {
+      "sequence": 12,
+      "result": {
+        "data": [
+          {
+            "id": "thread-beta",
+            "sessionId": "session-beta",
+            "cliVersion": "0.144.6",
+            "name": null,
+            "preview": "Beta preview is discarded",
+            "cwd": "/tmp/projects/beta",
+            "gitInfo": null,
+            "modelProvider": "openai",
+            "source": "cli",
+            "status": { "type": "notLoaded" },
+            "ephemeral": false,
+            "createdAt": 1820000010,
+            "updatedAt": 1820000011,
+            "recencyAt": null,
+            "turns": []
+          }
+        ],
+        "nextCursor": null,
+        "backwardsCursor": "cursor-back"
+      }
+    }
+  ],
+  "threadRead": {
+    "sequence": 20,
+    "result": {
+      "thread": {
+        "id": "thread-alpha",
+        "sessionId": "session-alpha",
+        "cliVersion": "0.144.6",
+        "name": "Alpha work",
+        "preview": "PHASE85_READ_PREVIEW_MUST_NOT_CROSS_ADAPTER",
+        "cwd": "/tmp/projects/alpha",
+        "gitInfo": {
+          "branch": "main",
+          "originUrl": "https://credential-canary@example.invalid/private.git",
+          "sha": "0123456789abcdef"
+        },
+        "modelProvider": "openai",
+        "source": "appServer",
+        "status": { "type": "idle" },
+        "ephemeral": false,
+        "createdAt": 1820000000,
+        "updatedAt": 1820000020,
+        "recencyAt": 1820000021,
+        "turns": [
+          {
+            "id": "turn-schema-faithful",
+            "status": "completed",
+            "startedAt": 1820000003,
+            "completedAt": 1820000019,
+            "itemsView": "full",
+            "items": [
+              { "id": "item-user", "type": "userMessage", "content": [] },
+              { "id": "item-hook", "type": "hookPrompt", "fragments": [] },
+              { "id": "item-agent", "type": "agentMessage", "text": "Bounded live agent text" },
+              { "id": "item-plan", "type": "plan", "text": "Bounded live plan" },
+              { "id": "item-reasoning", "type": "reasoning", "content": [], "summary": ["Safe summary"] },
+              { "id": "item-subagent", "type": "subAgentActivity", "agentPath": "worker", "agentThreadId": "worker-thread", "kind": "started" },
+              { "id": "item-search", "type": "webSearch", "query": "schema query" },
+              { "id": "item-image", "type": "imageView", "path": "/tmp/image.png" },
+              { "id": "item-sleep", "type": "sleep", "durationMs": 25 },
+              { "id": "item-review-enter", "type": "enteredReviewMode", "review": "current changes" },
+              { "id": "item-review-exit", "type": "exitedReviewMode", "review": "current changes" },
+              { "id": "item-compact", "type": "contextCompaction" },
+              {
+                "id": "item-command",
+                "type": "commandExecution",
+                "command": "swift test",
+                "commandActions": [],
+                "cwd": "/tmp/projects/alpha",
+                "status": "completed"
+              },
+              {
+                "id": "item-dynamic",
+                "type": "dynamicToolCall",
+                "arguments": {},
+                "tool": "failing-tool",
+                "status": "failed"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

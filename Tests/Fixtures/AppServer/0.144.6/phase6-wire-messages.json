@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "codexVersion": "0.144.6",
+  "messages": [
+    {
+      "label": "stable lifecycle notification",
+      "wire": {
+        "method": "turn/completed",
+        "params": {
+          "threadId": "synthetic-thread",
+          "turn": {
+            "id": "synthetic-turn",
+            "status": "completed"
+          }
+        }
+      }
+    },
+    {
+      "label": "unknown future method",
+      "wire": {
+        "method": "future/unrecognizedEvent",
+        "params": {}
+      }
+    },
+    {
+      "label": "unknown future envelope",
+      "wire": {
+        "futureEnvelope": true
+      }
+    }
+  ]
+}

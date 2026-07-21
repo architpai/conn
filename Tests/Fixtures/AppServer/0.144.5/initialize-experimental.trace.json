@@ -1,0 +1,41 @@
+{
+  "entries" : [
+    {
+      "direction" : "client_to_server",
+      "envelope" : "request",
+      "method" : "initialize",
+      "sequence" : 1,
+      "syntheticRequestID" : "req-001"
+    },
+    {
+      "direction" : "server_to_client",
+      "envelope" : "response",
+      "method" : "initialize",
+      "sequence" : 2,
+      "syntheticRequestID" : "req-001"
+    },
+    {
+      "direction" : "client_to_server",
+      "envelope" : "notification",
+      "method" : "initialized",
+      "sequence" : 3
+    }
+  ],
+  "fixture" : "conn-phase5-sanitized",
+  "matrix" : {
+    "entries" : [
+      {
+        "check" : "experimental.handshake",
+        "evidence" : [
+          "experimental-api.explicit",
+          "initialize.once",
+          "reasoning-text-delta.opted-out"
+        ],
+        "result" : "Pass"
+      }
+    ],
+    "overall" : "Pass",
+    "schemaVersion" : 1
+  },
+  "schemaVersion" : 1
+}
