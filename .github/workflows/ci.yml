@@ -16,11 +16,11 @@ jobs:
       - name: Build Conn
         run: swift build
       - name: App Server adapter tests
-        run: swift run conn-app-server-adapter-tests
+        run: '"$(swift build --show-bin-path)/conn-app-server-adapter-tests"'
       - name: Domain tests
-        run: swift run conn-domain-tests
+        run: '"$(swift build --show-bin-path)/conn-domain-tests"'
       - name: App core tests
-        run: swift run conn-app-core-tests
+        run: '"$(swift build --show-bin-path)/conn-app-core-tests"'
       - name: Release inspector tests
         run: ./scripts/test-inspect-release.sh
 
