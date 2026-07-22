@@ -249,11 +249,11 @@ enum Phase115NotificationPolicyTestCases {
 
         let baseline = await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_002))
         var seedLedger = ShellUserFacingNotificationSeedLedger()
-        let seededIDs = seedLedger.consume(baseline.threads)
+        let seededIDs = seedLedger.consume(baseline.threads, notifications: [])
         suite.checkEqual(
             seededIDs.count,
-            3,
-            "persisted assistant shells seed distinct identities even when raw IDs contain delimiters"
+            0,
+            "terminal history with no materialized prose establishes a silent turn baseline"
         )
 
         let laterThreadID = AppServerThreadID(rawValue: "later-idle-thread")
@@ -281,16 +281,16 @@ enum Phase115NotificationPolicyTestCases {
             ))
         )))
         let laterSnapshot = await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_003))
-        let laterThreadSeededIDs = seedLedger.consume(laterSnapshot.threads)
+        let laterThreadSeededIDs = seedLedger.consume(laterSnapshot.threads, notifications: [])
         suite.checkEqual(
             laterThreadSeededIDs.count,
-            1,
-            "a completed shell introduced by a later inventory publication is seeded once"
+            0,
+            "a terminal turn first observed later is sealed without item-level inference"
         )
         suite.checkEqual(
-            seedLedger.consume(laterSnapshot.threads),
+            seedLedger.consume(laterSnapshot.threads, notifications: []),
             [],
-            "already-seeded completed shells are not returned again"
+            "a repeated textless terminal publication remains silent"
         )
 
         let replayedTurnID = AppServerTurnID(rawValue: "same-thread-later-turn")
@@ -318,16 +318,19 @@ enum Phase115NotificationPolicyTestCases {
         let sameThreadLateSnapshot = await store.snapshot(
             at: Date(timeIntervalSince1970: 1_850_000_004)
         )
-        let sameThreadSeededIDs = seedLedger.consume(sameThreadLateSnapshot.threads)
-        suite.checkEqual(
-            sameThreadSeededIDs.count,
-            1,
-            "a later completed shell in an already-seeded thread receives its own silent seed"
+        let sameThreadSeededIDs = seedLedger.consume(
+            sameThreadLateSnapshot.threads,
+            notifications: []
         )
         suite.checkEqual(
-            seedLedger.consume(sameThreadLateSnapshot.threads),
+            sameThreadSeededIDs.count,
+            0,
+            "a later terminal turn in the same thread is sealed before prose is restored"
+        )
+        suite.checkEqual(
+            seedLedger.consume(sameThreadLateSnapshot.threads, notifications: []),
             [],
-            "the later same-thread shell is seeded exactly once"
+            "the sealed same-thread turn stays silent without stable item IDs"
         )
 
         let mutatingTurnID = AppServerTurnID(rawValue: "same-turn-mutation")
@@ -354,7 +357,7 @@ enum Phase115NotificationPolicyTestCases {
             at: Date(timeIntervalSince1970: 1_850_000_005)
         )
         suite.checkEqual(
-            seedLedger.consume(beforeSameItemCompletion.threads),
+            seedLedger.consume(beforeSameItemCompletion.threads, notifications: []),
             [],
             "an in-progress agent item is not silently seeded"
         )
@@ -375,12 +378,13 @@ enum Phase115NotificationPolicyTestCases {
         )))
         let sameItemMutationSeededIDs = seedLedger.consume(
             await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_006))
-                .threads
+                .threads,
+            notifications: []
         )
         suite.checkEqual(
             sameItemMutationSeededIDs.count,
-            1,
-            "an older terminal fact changing the same item to a textless completion is seeded"
+            0,
+            "an active turn does not infer notification history from a textless item"
         )
 
         let activeTurnID = AppServerTurnID(rawValue: "new-active-turn")
@@ -412,35 +416,59 @@ enum Phase115NotificationPolicyTestCases {
                 )
             )
         )))
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 8),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_009),
+            delta: .itemUpsert(
+                threadID: threadID,
+                turnID: turnID,
+                item: .init(
+                    id: oldItemID,
+                    kind: .agentMessage,
+                    status: .completed,
+                    completedAt: Date(timeIntervalSince1970: 1_850_000_000),
+                    presentation: .agentFinalText("Earlier previous completion")
+                )
+            )
+        )))
         var accumulatedSeenIDs = seededIDs
         accumulatedSeenIDs.formUnion(laterThreadSeededIDs)
         accumulatedSeenIDs.formUnion(sameThreadSeededIDs)
         accumulatedSeenIDs.formUnion(sameItemMutationSeededIDs)
+        let resumedSnapshot = await store.snapshot(
+            at: Date(timeIntervalSince1970: 1_850_000_009)
+        )
         let resumed = AppServerDomainPresentation(
-            snapshot: await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_008)),
+            snapshot: resumedSnapshot,
             runtimeStatus: .init(phase: .connected, detail: "Testing resume seeding."),
-            now: Date(timeIntervalSince1970: 1_850_000_008),
+            now: Date(timeIntervalSince1970: 1_850_000_009),
             detailedThreadIDs: [threadID]
         )
         let resumedNotifications = ShellUserFacingNotificationPolicy.collect(
             from: resumed.threads
         )
-        suite.check(
-            resumedNotifications.contains { sameThreadSeededIDs.contains($0.id) },
-            "the rematerialized prior answer retains the silently seeded history identity"
+        let resumedSuppressedIDs = seedLedger.consume(
+            resumedSnapshot.threads,
+            notifications: resumedNotifications
+        )
+        suite.checkEqual(
+            Set(resumedNotifications.map(\.text)),
+            ["Earlier previous completion", "Previous completion"],
+            "resume can atomically rematerialize multiple prior answers with new identities"
         )
         suite.checkEqual(
             ShellUserFacingNotificationPolicy.unseen(
                 resumedNotifications,
-                excluding: accumulatedSeenIDs
+                excluding: accumulatedSeenIDs.union(resumedSuppressedIDs)
             ).map(\.id),
             [],
-            "starting the next turn does not replay the previous completion notification"
+            "starting the next turn suppresses every rematerialized sealed-turn completion"
         )
+        accumulatedSeenIDs.formUnion(resumedSuppressedIDs)
 
         _ = await store.apply(.delta(.init(
-            cursor: .init(connection: connection, sequence: 8),
-            observedAt: Date(timeIntervalSince1970: 1_850_000_009),
+            cursor: .init(connection: connection, sequence: 9),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_010),
             delta: .itemUpsert(
                 threadID: threadID,
                 turnID: activeTurnID,
@@ -448,28 +476,30 @@ enum Phase115NotificationPolicyTestCases {
                     id: .init(rawValue: "new-answer"),
                     kind: .agentMessage,
                     status: .completed,
-                    completedAt: Date(timeIntervalSince1970: 1_850_000_009),
+                    completedAt: Date(timeIntervalSince1970: 1_850_000_010),
                     presentation: .agentFinalText("Genuinely new completion")
                 )
             )
         )))
         let afterNewCompletionSnapshot = await store.snapshot(
-            at: Date(timeIntervalSince1970: 1_850_000_010)
-        )
-        suite.checkEqual(
-            seedLedger.consume(afterNewCompletionSnapshot.threads),
-            [],
-            "a current completion with live text is not silently seeded"
+            at: Date(timeIntervalSince1970: 1_850_000_011)
         )
         let afterNewCompletion = AppServerDomainPresentation(
             snapshot: afterNewCompletionSnapshot,
             runtimeStatus: .init(phase: .connected, detail: "Testing resume seeding."),
-            now: Date(timeIntervalSince1970: 1_850_000_010),
+            now: Date(timeIntervalSince1970: 1_850_000_011),
             detailedThreadIDs: [threadID]
         )
+        let afterNewCompletionCollected = ShellUserFacingNotificationPolicy.collect(
+            from: afterNewCompletion.threads
+        )
+        let afterNewCompletionSuppressedIDs = seedLedger.consume(
+            afterNewCompletionSnapshot.threads,
+            notifications: afterNewCompletionCollected
+        )
         let newNotifications = ShellUserFacingNotificationPolicy.unseen(
-            ShellUserFacingNotificationPolicy.collect(from: afterNewCompletion.threads),
-            excluding: accumulatedSeenIDs
+            afterNewCompletionCollected,
+            excluding: accumulatedSeenIDs.union(afterNewCompletionSuppressedIDs)
         )
         suite.check(
             newNotifications.count == 1
@@ -480,10 +510,287 @@ enum Phase115NotificationPolicyTestCases {
         suite.checkEqual(
             ShellUserFacingNotificationPolicy.unseen(
                 ShellUserFacingNotificationPolicy.collect(from: afterNewCompletion.threads),
-                excluding: accumulatedSeenIDs
+                excluding: accumulatedSeenIDs.union(
+                    seedLedger.consume(
+                        afterNewCompletionSnapshot.threads,
+                        notifications: afterNewCompletionCollected
+                    )
+                )
             ),
             [],
             "the genuine current completion emits only once"
+        )
+
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 10),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_012),
+            delta: .turnUpsert(
+                threadID: threadID,
+                turn: .init(
+                    id: activeTurnID,
+                    status: .completed,
+                    completedAt: Date(timeIntervalSince1970: 1_850_000_012),
+                    itemsView: .full,
+                    items: [.init(
+                        id: .init(rawValue: "new-answer"),
+                        kind: .agentMessage,
+                        status: .completed,
+                        presentation: .agentFinalText("Genuinely new completion")
+                    )]
+                )
+            )
+        )))
+        let terminalSnapshot = await store.snapshot(
+            at: Date(timeIntervalSince1970: 1_850_000_012)
+        )
+        let terminalPresentation = AppServerDomainPresentation(
+            snapshot: terminalSnapshot,
+            runtimeStatus: .init(phase: .connected, detail: "Testing terminal seal."),
+            now: Date(timeIntervalSince1970: 1_850_000_012),
+            detailedThreadIDs: [threadID]
+        )
+        let terminalNotifications = ShellUserFacingNotificationPolicy.collect(
+            from: terminalPresentation.threads
+        )
+        suite.checkEqual(
+            seedLedger.consume(
+                terminalSnapshot.threads,
+                notifications: terminalNotifications
+            ),
+            resumedSuppressedIDs,
+            "the active-to-terminal publication closes the epoch without suppressing its live answer"
+        )
+
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 11),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_013),
+            delta: .turnUpsert(
+                threadID: threadID,
+                turn: .init(
+                    id: activeTurnID,
+                    status: .completed,
+                    completedAt: Date(timeIntervalSince1970: 1_850_000_012),
+                    itemsView: .full,
+                    items: [.init(
+                        id: .init(rawValue: "new-answer-remapped"),
+                        kind: .agentMessage,
+                        status: .completed,
+                        presentation: .agentFinalText("Genuinely new completion")
+                    )]
+                )
+            )
+        )))
+        let remappedTerminalSnapshot = await store.snapshot(
+            at: Date(timeIntervalSince1970: 1_850_000_013)
+        )
+        let remappedTerminalPresentation = AppServerDomainPresentation(
+            snapshot: remappedTerminalSnapshot,
+            runtimeStatus: .init(phase: .connected, detail: "Testing sealed remap."),
+            now: Date(timeIntervalSince1970: 1_850_000_013),
+            detailedThreadIDs: [threadID]
+        )
+        let remappedTerminalNotifications = ShellUserFacingNotificationPolicy.collect(
+            from: remappedTerminalPresentation.threads
+        )
+        let remappedTerminalSuppressedIDs = seedLedger.consume(
+            remappedTerminalSnapshot.threads,
+            notifications: remappedTerminalNotifications
+        )
+        suite.check(
+            remappedTerminalNotifications.contains {
+                $0.itemID.contains("new-answer-remapped")
+                    && remappedTerminalSuppressedIDs.contains($0.id)
+            },
+            "a later item-ID remap of the sealed current turn is silently absorbed"
+        )
+
+        let coalescedTurnID = AppServerTurnID(rawValue: "coalesced-live-turn")
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 12),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_014),
+            delta: .turnUpsert(
+                threadID: threadID,
+                turn: .init(id: coalescedTurnID, status: .inProgress)
+            )
+        )))
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 13),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_015),
+            delta: .itemUpsert(
+                threadID: threadID,
+                turnID: coalescedTurnID,
+                item: .init(
+                    id: .init(rawValue: "coalesced-answer"),
+                    kind: .agentMessage,
+                    status: .completed,
+                    presentation: .agentFinalText("Fast genuine completion")
+                )
+            )
+        )))
+        let splitActiveSnapshot = await store.snapshot(
+            at: Date(timeIntervalSince1970: 1_850_000_015)
+        )
+        let splitActivePresentation = AppServerDomainPresentation(
+            snapshot: splitActiveSnapshot,
+            runtimeStatus: .init(phase: .connected, detail: "Testing split lifecycle."),
+            now: Date(timeIntervalSince1970: 1_850_000_015),
+            detailedThreadIDs: [threadID]
+        )
+        let splitActiveNotifications = ShellUserFacingNotificationPolicy.collect(
+            from: splitActivePresentation.threads
+        )
+        let splitActiveSuppressedIDs = seedLedger.consume(
+            splitActiveSnapshot.threads,
+            notifications: splitActiveNotifications
+        )
+        let splitGenuineIDs = Set(splitActiveNotifications.compactMap {
+            $0.text == "Fast genuine completion" ? $0.id : nil
+        })
+        suite.check(
+            !splitGenuineIDs.isEmpty
+                && splitGenuineIDs.isDisjoint(with: splitActiveSuppressedIDs),
+            "a live final published before terminal status notifies immediately"
+        )
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 14),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_016),
+            delta: .turnUpsert(
+                threadID: threadID,
+                turn: .init(
+                    id: coalescedTurnID,
+                    status: .completed,
+                    completedAt: Date(timeIntervalSince1970: 1_850_000_016),
+                    itemsView: .full,
+                    items: [.init(
+                        id: .init(rawValue: "coalesced-answer"),
+                        kind: .agentMessage,
+                        status: .completed,
+                        presentation: .agentFinalText("Fast genuine completion")
+                    )]
+                )
+            )
+        )))
+        let coalescedSnapshot = await store.snapshot(
+            at: Date(timeIntervalSince1970: 1_850_000_016)
+        )
+        let coalescedPresentation = AppServerDomainPresentation(
+            snapshot: coalescedSnapshot,
+            runtimeStatus: .init(phase: .connected, detail: "Testing coalesced lifecycle."),
+            now: Date(timeIntervalSince1970: 1_850_000_016),
+            detailedThreadIDs: [threadID]
+        )
+        let coalescedNotifications = ShellUserFacingNotificationPolicy.collect(
+            from: coalescedPresentation.threads
+        )
+        let coalescedSuppressedIDs = seedLedger.consume(
+            coalescedSnapshot.threads,
+            notifications: coalescedNotifications
+        )
+        suite.checkEqual(
+            ShellUserFacingNotificationPolicy.unseen(
+                coalescedNotifications,
+                excluding: coalescedSuppressedIDs.union(splitGenuineIDs)
+            ),
+            [],
+            "terminal status closes the split epoch without duplicating its live final"
+        )
+
+        let fullyCoalescedTurnID = AppServerTurnID(rawValue: "fully-coalesced-live-turn")
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 15),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_017),
+            delta: .turnUpsert(
+                threadID: threadID,
+                turn: .init(id: fullyCoalescedTurnID, status: .inProgress)
+            )
+        )))
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 16),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_018),
+            delta: .itemUpsert(
+                threadID: threadID,
+                turnID: fullyCoalescedTurnID,
+                item: .init(
+                    id: .init(rawValue: "fully-coalesced-answer"),
+                    kind: .agentMessage,
+                    status: .completed,
+                    presentation: .agentFinalText("Fully coalesced completion")
+                )
+            )
+        )))
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 17),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_019),
+            delta: .turnUpsert(
+                threadID: threadID,
+                turn: .init(
+                    id: fullyCoalescedTurnID,
+                    status: .completed,
+                    items: [.init(
+                        id: .init(rawValue: "fully-coalesced-answer"),
+                        kind: .agentMessage,
+                        status: .completed,
+                        presentation: .agentFinalText("Fully coalesced completion")
+                    )]
+                )
+            )
+        )))
+        let fullyCoalescedSnapshot = await store.snapshot(
+            at: Date(timeIntervalSince1970: 1_850_000_019)
+        )
+        let fullyCoalescedPresentation = AppServerDomainPresentation(
+            snapshot: fullyCoalescedSnapshot,
+            runtimeStatus: .init(phase: .connected, detail: "Testing one-drain lifecycle."),
+            now: Date(timeIntervalSince1970: 1_850_000_019),
+            detailedThreadIDs: [threadID]
+        )
+        let fullyCoalescedNotifications = ShellUserFacingNotificationPolicy.collect(
+            from: fullyCoalescedPresentation.threads
+        )
+        let fullyCoalescedSuppressedIDs = seedLedger.consume(
+            fullyCoalescedSnapshot.threads,
+            notifications: fullyCoalescedNotifications
+        )
+        suite.check(
+            fullyCoalescedNotifications.contains {
+                $0.text == "Fully coalesced completion"
+                    && !fullyCoalescedSuppressedIDs.contains($0.id)
+            },
+            "a full live lifecycle reduced into one publication still notifies"
+        )
+
+        let reconnected = AppServerConnectionIdentity(
+            instanceID: UUID(uuidString: "11500000-0000-4000-8000-000000000007")!,
+            generation: 116
+        )
+        _ = await store.apply(.connectionActivated(
+            identity: reconnected,
+            source: .managedDaemon,
+            featureSupport: .init(features: [.monitor])
+        ))
+        let reconnectedSnapshot = await store.snapshot(
+            at: Date(timeIntervalSince1970: 1_850_000_020)
+        )
+        let reconnectedPresentation = AppServerDomainPresentation(
+            snapshot: reconnectedSnapshot,
+            runtimeStatus: .init(phase: .connected, detail: "Testing reconnect baseline."),
+            now: Date(timeIntervalSince1970: 1_850_000_020),
+            detailedThreadIDs: [threadID]
+        )
+        let reconnectedNotifications = ShellUserFacingNotificationPolicy.collect(
+            from: reconnectedPresentation.threads
+        )
+        var reconnectedLedger = ShellUserFacingNotificationSeedLedger()
+        let reconnectedSuppressedIDs = reconnectedLedger.consume(
+            reconnectedSnapshot.threads,
+            notifications: reconnectedNotifications
+        )
+        suite.check(
+            reconnectedNotifications.contains {
+                $0.text == "Fast genuine completion"
+                    && reconnectedSuppressedIDs.contains($0.id)
+            },
+            "a new connection generation treats the prior live turn as historical"
         )
     }
 

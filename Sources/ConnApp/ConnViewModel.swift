@@ -1833,13 +1833,14 @@ final class ConnViewModel: ObservableObject {
         from presentation: AppServerDomainPresentation
     ) {
         let collected = ShellUserFacingNotificationPolicy.collect(from: presentation.threads)
-        // Checkpoints retain completed-item identities while omitting
-        // runtime-only prose, and resumed history can remap a live item ID.
-        // Seed every newly observed textless completion so either resume path
-        // cannot replay restored historical text on the next turn. The ledger
-        // scans only turns whose structural frontier changed.
+        // A turn is eligible only during its observed live epoch. Once sealed,
+        // every later hydration/remap is historical regardless of item ID or
+        // whether the restored prose arrives atomically.
         seenUserFacingNotificationIDs.formUnion(
-            notificationSeedLedger.consume(latestSnapshot?.threads ?? [])
+            notificationSeedLedger.consume(
+                latestSnapshot?.threads ?? [],
+                notifications: collected
+            )
         )
         let detailedHydrationThreadIDs = Set(
             (latestSnapshot?.threads ?? []).compactMap { thread in

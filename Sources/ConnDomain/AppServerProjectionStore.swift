@@ -43,7 +43,7 @@ public actor AppServerProjectionStore {
         var planSequence: UInt64
         var planConflict: Bool
         var sequence: UInt64
-        var mutationRevision: UInt64
+        var hasLiveNotificationEpoch: Bool
         var terminalConflict: Bool
     }
 
@@ -204,7 +204,7 @@ public actor AppServerProjectionStore {
                     planSequence: 0,
                     planConflict: false,
                     sequence: 0,
-                    mutationRevision: 0,
+                    hasLiveNotificationEpoch: false,
                     terminalConflict: projectedTurn.status == .unknown
                 )
             }
@@ -300,6 +300,7 @@ public actor AppServerProjectionStore {
                 reset.plan = nil
                 reset.planSequence = 0
                 reset.planConflict = false
+                reset.hasLiveNotificationEpoch = false
                 if reset.status == .inProgress {
                     // An active turn ID from a prior connection is cache only.
                     // It becomes current again only through a structured read or
@@ -887,6 +888,10 @@ public actor AppServerProjectionStore {
             authoritative: false
         )
         guard thread.turns[input.id] != previous else { return .duplicate }
+        if var acceptedTurn = thread.turns[input.id] {
+            acceptedTurn.hasLiveNotificationEpoch = true
+            thread.turns[input.id] = acceptedTurn
+        }
         thread.freshness = terminalConflict ? .stale : .live
         if terminalConflict {
             state.requiresSnapshot = true
@@ -926,7 +931,7 @@ public actor AppServerProjectionStore {
             planSequence: 0,
             planConflict: false,
             sequence: sequence,
-            mutationRevision: 0,
+            hasLiveNotificationEpoch: true,
             terminalConflict: false
         )
         let previous = turn.items[input.id]
@@ -938,7 +943,7 @@ public actor AppServerProjectionStore {
         )
         guard turn.items[input.id] != previous else { return .duplicate }
         turn.sequence = max(turn.sequence, sequence)
-        turn.mutationRevision &+= 1
+        turn.hasLiveNotificationEpoch = true
         thread.turns[turnID] = turn
         thread.freshness = terminalConflict ? .stale : .live
         if terminalConflict {
@@ -1050,7 +1055,7 @@ public actor AppServerProjectionStore {
         stored.sequence = sequence
         turn.items[itemID] = stored
         turn.sequence = max(turn.sequence, sequence)
-        turn.mutationRevision &+= 1
+        turn.hasLiveNotificationEpoch = true
         thread.turns[turnID] = turn
         thread.freshness = .live
         thread.lastObservedAt = max(thread.lastObservedAt, observedAt)
@@ -1127,7 +1132,7 @@ public actor AppServerProjectionStore {
             planSequence: 0,
             planConflict: false,
             sequence: sequence,
-            mutationRevision: 0,
+            hasLiveNotificationEpoch: true,
             terminalConflict: false
         )
         guard sequence >= turn.planSequence else { return .duplicate }
@@ -1141,7 +1146,7 @@ public actor AppServerProjectionStore {
             turn.planConflict = false
         }
         turn.sequence = max(turn.sequence, sequence)
-        turn.mutationRevision &+= 1
+        turn.hasLiveNotificationEpoch = true
         thread.turns[turnID] = turn
         thread.freshness = .live
         thread.lastObservedAt = max(thread.lastObservedAt, observedAt)
@@ -1224,8 +1229,7 @@ public actor AppServerProjectionStore {
         sequence: UInt64,
         authoritative: Bool
     ) -> Bool {
-        let previousTurn = thread.turns[input.id]
-        var turn = previousTurn ?? StoredTurn(
+        var turn = thread.turns[input.id] ?? StoredTurn(
             id: input.id,
             status: input.status,
             startedAt: input.startedAt,
@@ -1236,7 +1240,7 @@ public actor AppServerProjectionStore {
             planSequence: 0,
             planConflict: false,
             sequence: sequence,
-            mutationRevision: 0,
+            hasLiveNotificationEpoch: false,
             terminalConflict: input.status == .unknown
         )
 
@@ -1291,9 +1295,6 @@ public actor AppServerProjectionStore {
         }
         turn.sequence = max(turn.sequence, sequence)
         trimTurn(&turn)
-        if let previousTurn, turn != previousTurn {
-            turn.mutationRevision &+= 1
-        }
         thread.turns[input.id] = turn
         return turn.terminalConflict || turn.items.values.contains(where: \.terminalConflict)
     }
@@ -1502,7 +1503,7 @@ public actor AppServerProjectionStore {
                 return $0.value.id < $1.value.id
             }.map(\.value),
             plan: turn.plan,
-            observationRevision: turn.mutationRevision
+            hasLiveNotificationEpoch: turn.hasLiveNotificationEpoch
         )
     }
 
@@ -1747,7 +1748,6 @@ public actor AppServerProjectionStore {
             guard var thread = state.threads[threadID] else { continue }
             for turnID in thread.turns.keys {
                 guard var turn = thread.turns[turnID] else { continue }
-                var didStripPresentation = false
                 for itemID in turn.items.keys {
                     let location = PresentationLocation(
                         threadID: threadID,
@@ -1767,9 +1767,7 @@ public actor AppServerProjectionStore {
                         presentation: nil
                     ))
                     turn.items[itemID] = item
-                    didStripPresentation = true
                 }
-                if didStripPresentation { turn.mutationRevision &+= 1 }
                 thread.turns[turnID] = turn
             }
             state.threads[threadID] = thread
@@ -1865,9 +1863,7 @@ public actor AppServerProjectionStore {
         }
         for id in thread.turns.keys {
             guard var turn = thread.turns[id] else { continue }
-            let priorItems = turn.items
             trimTurn(&turn)
-            if turn.items != priorItems { turn.mutationRevision &+= 1 }
             thread.turns[id] = turn
         }
     }

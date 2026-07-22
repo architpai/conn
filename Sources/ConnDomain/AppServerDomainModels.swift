@@ -918,9 +918,9 @@ public struct AppServerProjectedTurn: Codable, Equatable, Sendable, Identifiable
     public let items: [AppServerProjectedItem]
     /// Runtime-only structured plan. Custom Codable intentionally omits it.
     public let plan: AppServerTurnPlan?
-    /// Runtime-only projection revision used to detect any accepted mutation
-    /// without re-walking the turn's bounded item collection.
-    public let observationRevision: UInt64
+    /// Runtime-only evidence that a live delta opened this turn's notification
+    /// epoch on the current connection. Hydration alone never sets it.
+    public let hasLiveNotificationEpoch: Bool
 
     public init(
         id: AppServerTurnID,
@@ -930,7 +930,7 @@ public struct AppServerProjectedTurn: Codable, Equatable, Sendable, Identifiable
         itemsView: AppServerTurnItemsView,
         items: [AppServerProjectedItem],
         plan: AppServerTurnPlan? = nil,
-        observationRevision: UInt64 = 0
+        hasLiveNotificationEpoch: Bool = false
     ) {
         self.id = id
         self.status = status
@@ -939,7 +939,7 @@ public struct AppServerProjectedTurn: Codable, Equatable, Sendable, Identifiable
         self.itemsView = itemsView
         self.items = items
         self.plan = plan
-        self.observationRevision = observationRevision
+        self.hasLiveNotificationEpoch = hasLiveNotificationEpoch
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
@@ -970,7 +970,7 @@ public struct AppServerProjectedTurn: Codable, Equatable, Sendable, Identifiable
         itemsView = try container.decode(AppServerTurnItemsView.self, forKey: .itemsView)
         items = try container.decode([AppServerProjectedItem].self, forKey: .items)
         plan = nil
-        observationRevision = 0
+        hasLiveNotificationEpoch = false
     }
 
     public func encode(to encoder: any Encoder) throws {
