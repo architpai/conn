@@ -16,6 +16,8 @@ enum Phase115UIOverhaulTestCases {
         testExpandedIdleThreadRequestsMissingModelAuthority(into: &suite)
         testNewChatUsesDefaultWorkspace(into: &suite)
         testReduceMotionPolicy(into: &suite)
+        testExpandedContentTransitionPolicy(into: &suite)
+        testSurfaceGeometryTransitionGeneration(into: &suite)
         testGraphiteChromePolicy(into: &suite)
         testTranscriptActivityDisclosurePolicy(into: &suite)
         testSharedDesktopLabsViewport(into: &suite)
@@ -336,15 +338,124 @@ enum Phase115UIOverhaulTestCases {
         suite.check(standard.contentDelay > 0, "standard motion staggers content after geometry begins")
         suite.checkEqual(ShellMotionPolicy.springProgress(0), 0, "unfurl spring begins at the current geometry")
         suite.check(
-            ShellMotionPolicy.springProgress(0.5) > 1,
-            "unfurl spring has a real damped overshoot instead of a cubic ease label"
+            ShellMotionPolicy.springProgress(0.2) < 0.6,
+            "unfurl spring does not present a full-size empty panel near the start"
+        )
+        suite.check(
+            ShellMotionPolicy.springProgress(0.5) < 0.95,
+            "unfurl spring keeps visible geometry moving through the content delay"
+        )
+        suite.check(
+            ShellMotionPolicy.springProgress(0.9) > 1,
+            "unfurl spring retains a small late overshoot instead of becoming a cubic ease"
+        )
+        suite.check(
+            abs(ShellMotionPolicy.springProgress(0.999) - ShellMotionPolicy.springProgress(1)) < 0.001,
+            "unfurl spring approaches its destination continuously without a final-frame snap"
         )
         suite.checkEqual(ShellMotionPolicy.springProgress(1), 1, "unfurl spring settles exactly on its destination")
+        suite.checkEqual(
+            ShellMotionPolicy.linearProgress(elapsed: -0.1, duration: 0.5),
+            0,
+            "elapsed-time motion clamps callbacks before the animation start"
+        )
+        suite.checkEqual(
+            ShellMotionPolicy.linearProgress(elapsed: 0.25, duration: 0.5),
+            0.5,
+            "elapsed-time motion derives progress from the monotonic clock"
+        )
+        suite.checkEqual(
+            ShellMotionPolicy.linearProgress(elapsed: 0.75, duration: 0.5),
+            1,
+            "a delayed callback skips stale frames and completes on time"
+        )
+        suite.check(
+            !ShellMotionPolicy.shouldRevealExpandedContent(
+                linearProgress: ShellMotionPolicy.expandedContentRevealLinearProgress - 0.01,
+                hasPendingAnimatedGeometryRefresh: false
+            ),
+            "expanded content stays unmounted before the reveal threshold"
+        )
+        suite.check(
+            ShellMotionPolicy.shouldRevealExpandedContent(
+                linearProgress: ShellMotionPolicy.expandedContentRevealLinearProgress,
+                hasPendingAnimatedGeometryRefresh: false
+            ),
+            "expanded content begins fading at the reveal threshold"
+        )
+        suite.check(
+            !ShellMotionPolicy.shouldRevealExpandedContent(
+                linearProgress: 1,
+                hasPendingAnimatedGeometryRefresh: true
+            ),
+            "a queued animated geometry correction defers content until the final frame settles"
+        )
+        suite.check(
+            ShellMotionPolicy.shouldRevealExpandedContent(
+                linearProgress: 1,
+                hasPendingAnimatedGeometryRefresh: false
+            ),
+            "a passive geometry refresh does not recreate the post-expansion gap"
+        )
+        suite.check(
+            ShellMotionPolicy.springProgress(
+                ShellMotionPolicy.expandedContentRevealLinearProgress
+            ) > 0.92,
+            "the reveal threshold waits until the panel is substantially unfolded"
+        )
+        suite.check(
+            (1 - ShellMotionPolicy.expandedContentRevealLinearProgress) * standard.geometryDuration
+                > ShellMotionPolicy.expandedContentFadeDuration,
+            "expanded content finishes fading in before panel geometry settles"
+        )
 
         let reduced = ShellMotionPolicy.presentation(reduceMotion: true)
         suite.checkEqual(reduced.style, .fadeOnly, "Reduce Motion switches to fade-only presentation")
         suite.checkEqual(reduced.geometryDuration, 0, "Reduce Motion removes spatial panel animation")
         suite.checkEqual(reduced.contentDelay, 0, "Reduce Motion removes content staggering")
+    }
+
+    private static func testExpandedContentTransitionPolicy(into suite: inout TestSuite) {
+        suite.check(
+            !ShellExpandedContentPresentationPolicy.presentsExpandedContent(
+                surface: .expanded,
+                isRevealReady: false
+            ),
+            "expanded content stays unmounted while panel geometry changes"
+        )
+        suite.check(
+            ShellExpandedContentPresentationPolicy.presentsExpandedContent(
+                surface: .expanded,
+                isRevealReady: true
+            ),
+            "expanded content mounts after panel geometry settles"
+        )
+        suite.check(
+            !ShellExpandedContentPresentationPolicy.presentsExpandedContent(
+                surface: .compact,
+                isRevealReady: true
+            ),
+            "compact presentation never constructs expanded content"
+        )
+    }
+
+    private static func testSurfaceGeometryTransitionGeneration(into suite: inout TestSuite) {
+        var gate = ShellSurfaceGeometryTransitionGenerationGate()
+        let expansion = gate.begin()
+        suite.check(gate.isCurrent(expansion), "a new geometry transition owns its callbacks")
+
+        let collapse = gate.begin()
+        suite.check(
+            !gate.isCurrent(expansion),
+            "a superseding collapse invalidates queued expansion callbacks"
+        )
+        suite.check(gate.isCurrent(collapse), "the superseding transition remains current")
+
+        gate.invalidate()
+        suite.check(
+            !gate.isCurrent(collapse),
+            "an immediate surface update invalidates all queued transition callbacks"
+        )
     }
 
     private static func testGraphiteChromePolicy(into suite: inout TestSuite) {

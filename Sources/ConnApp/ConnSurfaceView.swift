@@ -49,21 +49,28 @@ struct ConnSurfaceView: View {
                         )
                 }
             case .expanded:
-                expandedSurface
-                    .transition(.opacity.animation(
-                        .easeOut(duration: motion.style == .fadeOnly ? 0.12 : 0.18)
-                            .delay(motion.contentDelay)
-                    ))
+                if model.presentsExpandedContent {
+                    expandedSurface
+                        .transition(.opacity)
+                } else {
+                    // Keep the hosting view pinned to the authoritative panel
+                    // size without constructing the transcript during resize.
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .foregroundStyle(.white)
         .background(Color.black)
         .clipShape(islandShape)
         .animation(
-            motion.style == .fadeOnly
-                ? .easeOut(duration: 0.12)
-                : .spring(duration: 0.52, bounce: 0.18),
-            value: model.surfaceState
+            .easeOut(
+                duration: motion.style == .fadeOnly
+                    ? 0.12
+                    : ShellMotionPolicy.expandedContentFadeDuration
+            ),
+            value: model.presentsExpandedContent
         )
         .animation(
             motion.style == .fadeOnly

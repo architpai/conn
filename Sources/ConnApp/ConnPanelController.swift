@@ -83,6 +83,7 @@ final class ConnPanelController {
     private var panelAnimationTask: Task<Void, Never>?
     private var pendingGeometryRefresh = false
     private var pendingGeometryRefreshShouldAnimate = false
+    private var pendingGeometryCompletions: [() -> Void] = []
     // AppKit owns this opaque process-local token. Creation, use, and teardown
     // are main-thread confined even though Swift imports the token as `Any`.
     nonisolated(unsafe) private var localEscapeMonitor: Any?
@@ -297,8 +298,19 @@ final class ConnPanelController {
             connApplicationPID: ownPID
         )
         lifecycle.apply(.userExpand)
-        model.setSurfaceState(.expanded)
-        applyGeometry(animated: true)
+        let transition = model.beginSurfaceGeometryTransition(to: .expanded)
+        applyGeometry(
+            animated: true,
+            contentReveal: { [weak self] in
+                self?.model.revealExpandedContentDuringGeometryTransition(transition)
+            },
+            completion: { [weak self] in
+                self?.model.completeSurfaceGeometryTransition(
+                    to: .expanded,
+                    generation: transition
+                )
+            }
+        )
         performFocusDecision(decision)
         panel.makeKeyAndOrderFront(nil)
     }
@@ -306,13 +318,18 @@ final class ConnPanelController {
     private func collapse(reason: ShellCollapseReason) {
         guard lifecycle.surface != .compact else { return }
         lifecycle.apply(ShellCollapseRoutingPolicy.lifecycleEvent(for: reason))
-        model.setSurfaceState(lifecycle.surface)
         // Outside clicks intentionally leave the workspace sticky. The policy
         // keeps lifecycle and rendered surface aligned, so no compact geometry
         // or focus restoration can run for that no-op transition.
         guard lifecycle.surface == .compact else { return }
+        let transition = model.beginSurfaceGeometryTransition(to: .compact)
         panel.resignKey()
-        applyGeometry(animated: true)
+        applyGeometry(animated: true) { [weak self] in
+            self?.model.completeSurfaceGeometryTransition(
+                to: .compact,
+                generation: transition
+            )
+        }
         if lifecycle.visibility == .visible { panel.orderFrontRegardless() }
         performFocusDecision(focus.apply(
             .userCollapse(reason: reason, frontmostApplicationPID: currentFocusOwnerPID),
@@ -419,10 +436,16 @@ final class ConnPanelController {
         refreshDisplays(reconfigure: true)
     }
 
-    private func applyGeometry(animated: Bool = false) {
+    private func applyGeometry(
+        animated: Bool = false,
+        contentReveal: (() -> Void)? = nil,
+        completion: (() -> Void)? = nil
+    ) {
         if geometryTransitionInFlight {
             pendingGeometryRefresh = true
             pendingGeometryRefreshShouldAnimate = pendingGeometryRefreshShouldAnimate || animated
+            if let contentReveal { pendingGeometryCompletions.append(contentReveal) }
+            if let completion { pendingGeometryCompletions.append(completion) }
             return
         }
         guard let selectedDisplay else {
@@ -450,8 +473,15 @@ final class ConnPanelController {
             && panel.isVisible
 
         guard shouldAnimate else {
+            guard panel.frame != geometry.frame else {
+                contentReveal?()
+                completion?()
+                return
+            }
             lockPanelSize(geometry.frame.size)
             panel.setFrame(geometry.frame, display: true)
+            contentReveal?()
+            completion?()
             return
         }
 
@@ -459,35 +489,67 @@ final class ConnPanelController {
         unlockPanelSize()
         let startingFrame = panel.frame
         let destinationFrame = geometry.frame
+        guard startingFrame != destinationFrame else {
+            geometryTransitionInFlight = false
+            lockPanelSize(destinationFrame.size)
+            contentReveal?()
+            completion?()
+            return
+        }
         let duration = motion.geometryDuration
-        let frameCount = max(Int(duration * 60), 1)
+        let frameInterval = duration / Double(max(Int(duration * 60), 1))
+        let startedAt = ProcessInfo.processInfo.systemUptime
         panelAnimationTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            for frameIndex in 1...frameCount {
+            var didRevealContent = false
+            while true {
                 guard !Task.isCancelled else { return }
-                let linearProgress = Double(frameIndex) / Double(frameCount)
-                let progress = ShellMotionPolicy.springProgress(linearProgress)
-                self.panel.setFrame(
-                    Self.interpolate(
-                        from: startingFrame,
-                        to: destinationFrame,
-                        progress: progress
-                    ),
-                    display: true
+                let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+                let linearProgress = ShellMotionPolicy.linearProgress(
+                    elapsed: elapsed,
+                    duration: duration
                 )
-                if frameIndex < frameCount {
-                    try? await Task.sleep(for: .seconds(duration / Double(frameCount)))
+                let progress = ShellMotionPolicy.springProgress(linearProgress)
+                let frame = Self.interpolate(
+                    from: startingFrame,
+                    to: destinationFrame,
+                    progress: progress
+                )
+                if self.panel.frame != frame {
+                    self.panel.setFrame(frame, display: true)
                 }
+                if !didRevealContent,
+                   ShellMotionPolicy.shouldRevealExpandedContent(
+                       linearProgress: linearProgress,
+                       hasPendingAnimatedGeometryRefresh:
+                           self.pendingGeometryRefreshShouldAnimate
+                   ) {
+                    contentReveal?()
+                    didRevealContent = true
+                }
+                guard linearProgress < 1 else { break }
+                try? await Task.sleep(for: .seconds(frameInterval))
             }
             self.geometryTransitionInFlight = false
             self.lockPanelSize(destinationFrame.size)
-            self.panel.setFrame(destinationFrame, display: true)
+            if self.panel.frame != destinationFrame {
+                self.panel.setFrame(destinationFrame, display: true)
+            }
             self.panelAnimationTask = nil
+            var completions: [() -> Void] = []
+            if !didRevealContent, let contentReveal { completions.append(contentReveal) }
+            if let completion { completions.append(completion) }
+            completions.append(contentsOf: self.pendingGeometryCompletions)
+            self.pendingGeometryCompletions.removeAll(keepingCapacity: true)
             if self.pendingGeometryRefresh {
                 let shouldAnimate = self.pendingGeometryRefreshShouldAnimate
                 self.pendingGeometryRefresh = false
                 self.pendingGeometryRefreshShouldAnimate = false
-                self.applyGeometry(animated: shouldAnimate)
+                self.applyGeometry(animated: shouldAnimate) {
+                    completions.forEach { $0() }
+                }
+            } else {
+                completions.forEach { $0() }
             }
         }
     }

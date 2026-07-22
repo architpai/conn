@@ -46,18 +46,76 @@ public struct ShellMotionPresentation: Equatable, Sendable {
 }
 
 public enum ShellMotionPolicy {
+    public static let expandedContentRevealLinearProgress = 0.58
+    public static let expandedContentFadeDuration: TimeInterval = 0.16
+
     public static func presentation(reduceMotion: Bool) -> ShellMotionPresentation {
         reduceMotion
             ? .init(style: .fadeOnly, geometryDuration: 0, contentDelay: 0)
             : .init(style: .unfurlSpring, geometryDuration: 0.52, contentDelay: 0.08)
     }
 
-    /// A damped spring that settles exactly on the destination while retaining
-    /// a small, deliberate overshoot during the unfurl.
+    /// A damped spring whose first destination crossing occurs late in the
+    /// transition. This keeps the visible unfurl aligned with content reveal
+    /// instead of presenting a full-size empty panel during a long settle.
     public static func springProgress(_ linearProgress: Double) -> Double {
         let progress = min(max(linearProgress, 0), 1)
         guard progress < 1 else { return 1 }
-        return 1 - exp(-6 * progress) * cos(8 * progress)
+        return 1 - (1 - progress) * exp(-2.5 * progress) * cos(2 * progress)
+    }
+
+    /// Derives animation progress from monotonic elapsed time instead of a
+    /// scheduled frame index. A delayed main-thread callback therefore skips
+    /// stale frames and still reaches the destination on time.
+    public static func linearProgress(
+        elapsed: TimeInterval,
+        duration: TimeInterval
+    ) -> Double {
+        guard duration.isFinite, duration > 0 else { return 1 }
+        guard elapsed.isFinite else { return elapsed.sign == .minus ? 0 : 1 }
+        return min(max(elapsed / duration, 0), 1)
+    }
+
+    public static func shouldRevealExpandedContent(
+        linearProgress: Double,
+        hasPendingAnimatedGeometryRefresh: Bool
+    ) -> Bool {
+        !hasPendingAnimatedGeometryRefresh
+            && linearProgress >= expandedContentRevealLinearProgress
+    }
+}
+
+public enum ShellExpandedContentPresentationPolicy {
+    /// Expanded content stays unmounted while AppKit changes the panel frame so
+    /// the transcript and composer are not laid out at every intermediate size.
+    public static func presentsExpandedContent(
+        surface: ShellSurfaceState,
+        isRevealReady: Bool
+    ) -> Bool {
+        surface == .expanded && isRevealReady
+    }
+}
+
+public struct ShellSurfaceGeometryTransitionGeneration: Equatable, Sendable {
+    fileprivate let rawValue: UInt64
+}
+
+public struct ShellSurfaceGeometryTransitionGenerationGate: Equatable, Sendable {
+    private var value: UInt64 = 0
+
+    public init() {}
+
+    public mutating func begin() -> ShellSurfaceGeometryTransitionGeneration {
+        value &+= 1
+        return .init(rawValue: value)
+    }
+
+    public mutating func invalidate() {
+        value &+= 1
+    }
+
+    public func isCurrent(_ generation: ShellSurfaceGeometryTransitionGeneration) -> Bool {
+        generation.rawValue == value
     }
 }
 
