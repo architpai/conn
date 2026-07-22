@@ -59,6 +59,29 @@ public enum ShellMotionPolicy {
         guard progress < 1 else { return 1 }
         return 1 - exp(-6 * progress) * cos(8 * progress)
     }
+
+    /// Derives animation progress from monotonic elapsed time instead of a
+    /// scheduled frame index. A delayed main-thread callback therefore skips
+    /// stale frames and still reaches the destination on time.
+    public static func linearProgress(
+        elapsed: TimeInterval,
+        duration: TimeInterval
+    ) -> Double {
+        guard duration.isFinite, duration > 0 else { return 1 }
+        guard elapsed.isFinite else { return elapsed.sign == .minus ? 0 : 1 }
+        return min(max(elapsed / duration, 0), 1)
+    }
+}
+
+public enum ShellExpandedContentPresentationPolicy {
+    /// Expanded content stays unmounted while AppKit changes the panel frame so
+    /// the transcript and composer are not laid out at every intermediate size.
+    public static func presentsExpandedContent(
+        surface: ShellSurfaceState,
+        geometryTransitionInFlight: Bool
+    ) -> Bool {
+        surface == .expanded && !geometryTransitionInFlight
+    }
 }
 
 /// Deterministic presentation math for the compact notification shelf. The

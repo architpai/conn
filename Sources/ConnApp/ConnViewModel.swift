@@ -29,6 +29,7 @@ final class ConnViewModel: ObservableObject {
     @Published private(set) var selectedSessionID: String?
     @Published private(set) var presentationDate = Date()
     @Published private(set) var surfaceState: ShellSurfaceState = .compact
+    @Published private(set) var isSurfaceGeometryTransitionInFlight = false
     @Published private(set) var compactShelf: ShellCompactShelfPresentation?
     @Published private(set) var compactNotificationBatch: ShellUserFacingNotificationBatch?
     @Published private(set) var panelPlacement: ShellPanelPlacement = .externalCapsule
@@ -368,6 +369,12 @@ final class ConnViewModel: ObservableObject {
     }
 
     var isExpanded: Bool { surfaceState == .expanded }
+    var presentsExpandedContent: Bool {
+        ShellExpandedContentPresentationPolicy.presentsExpandedContent(
+            surface: surfaceState,
+            geometryTransitionInFlight: isSurfaceGeometryTransitionInFlight
+        )
+    }
     var canRequestSync: Bool { onRequestSync != nil }
     var canSetUpSharedDesktop: Bool {
         onSetUpSharedDesktop != nil && !isSettingUpSharedDesktop && !isDiagnosingSharedDesktop
@@ -586,9 +593,23 @@ final class ConnViewModel: ObservableObject {
     }
 
     func setSurfaceState(_ state: ShellSurfaceState) {
+        isSurfaceGeometryTransitionInFlight = false
         surfaceState = state
         if state == .compact { reconcileCompactShelf() }
         onCompactShelfVisibilityChanged?(state == .compact && compactShelf != nil)
+    }
+
+    func beginSurfaceGeometryTransition(to state: ShellSurfaceState) {
+        // Publish the transition guard first. When expansion begins, SwiftUI
+        // must never observe an expanded surface with its heavy content mounted.
+        isSurfaceGeometryTransitionInFlight = true
+        surfaceState = state
+        if state == .compact { reconcileCompactShelf() }
+    }
+
+    func completeSurfaceGeometryTransition(to state: ShellSurfaceState) {
+        guard surfaceState == state else { return }
+        isSurfaceGeometryTransitionInFlight = false
     }
 
     var compactShelfPreferredHeight: CGFloat {

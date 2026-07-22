@@ -16,6 +16,7 @@ enum Phase115UIOverhaulTestCases {
         testExpandedIdleThreadRequestsMissingModelAuthority(into: &suite)
         testNewChatUsesDefaultWorkspace(into: &suite)
         testReduceMotionPolicy(into: &suite)
+        testExpandedContentTransitionPolicy(into: &suite)
         testGraphiteChromePolicy(into: &suite)
         testTranscriptActivityDisclosurePolicy(into: &suite)
         testSharedDesktopLabsViewport(into: &suite)
@@ -340,11 +341,50 @@ enum Phase115UIOverhaulTestCases {
             "unfurl spring has a real damped overshoot instead of a cubic ease label"
         )
         suite.checkEqual(ShellMotionPolicy.springProgress(1), 1, "unfurl spring settles exactly on its destination")
+        suite.checkEqual(
+            ShellMotionPolicy.linearProgress(elapsed: -0.1, duration: 0.5),
+            0,
+            "elapsed-time motion clamps callbacks before the animation start"
+        )
+        suite.checkEqual(
+            ShellMotionPolicy.linearProgress(elapsed: 0.25, duration: 0.5),
+            0.5,
+            "elapsed-time motion derives progress from the monotonic clock"
+        )
+        suite.checkEqual(
+            ShellMotionPolicy.linearProgress(elapsed: 0.75, duration: 0.5),
+            1,
+            "a delayed callback skips stale frames and completes on time"
+        )
 
         let reduced = ShellMotionPolicy.presentation(reduceMotion: true)
         suite.checkEqual(reduced.style, .fadeOnly, "Reduce Motion switches to fade-only presentation")
         suite.checkEqual(reduced.geometryDuration, 0, "Reduce Motion removes spatial panel animation")
         suite.checkEqual(reduced.contentDelay, 0, "Reduce Motion removes content staggering")
+    }
+
+    private static func testExpandedContentTransitionPolicy(into suite: inout TestSuite) {
+        suite.check(
+            !ShellExpandedContentPresentationPolicy.presentsExpandedContent(
+                surface: .expanded,
+                geometryTransitionInFlight: true
+            ),
+            "expanded content stays unmounted while panel geometry changes"
+        )
+        suite.check(
+            ShellExpandedContentPresentationPolicy.presentsExpandedContent(
+                surface: .expanded,
+                geometryTransitionInFlight: false
+            ),
+            "expanded content mounts after panel geometry settles"
+        )
+        suite.check(
+            !ShellExpandedContentPresentationPolicy.presentsExpandedContent(
+                surface: .compact,
+                geometryTransitionInFlight: false
+            ),
+            "compact presentation never constructs expanded content"
+        )
     }
 
     private static func testGraphiteChromePolicy(into suite: inout TestSuite) {
