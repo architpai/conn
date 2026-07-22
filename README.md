@@ -10,7 +10,7 @@ and question requests, and lets you steer, follow up, or stop a turn without
 taking ownership of the Codex process.
 
 > [!IMPORTANT]
-> Conn 0.1.0 is an alpha preview for Apple Silicon Macs running macOS 15 or
+> Conn 0.1.1 is an alpha preview for Apple Silicon Macs running macOS 15 or
 > later. It currently supports Codex CLI/App Server versions `0.144.5` and
 > `0.144.6` exactly. Shared Desktop Mode is experimental and off by default.
 
@@ -135,7 +135,7 @@ checks.
 
 ## Project status and roadmap
 
-Version 0.1.0 is a narrow alpha. Near-term priorities are Developer ID signing
+Version 0.1.1 is a narrow alpha. Near-term priorities are Developer ID signing
 and notarization, a broader and less brittle Codex compatibility strategy,
 universal macOS builds, UI refinement through daily use, and voice dictation.
 See [CHANGELOG.md](CHANGELOG.md) for release history.

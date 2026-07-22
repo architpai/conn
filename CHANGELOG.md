@@ -6,21 +6,26 @@ public alpha releases.
 
 ## [Unreleased]
 
-### Fixed
-
-- Prevent resuming an idle thread in Conn or Codex from replaying its previous
-  assistant completion as a duplicate notification.
-- Recover the Codex-managed daemon after a reboot when its exact control socket
-  is absent and the version probe reports the corresponding `ENOENT` failure.
-
 ### Planned
 
 - Broader Codex App Server version compatibility.
 - Continued accessibility, interaction, and release-hardening work.
 
+## [0.1.1] - 2026-07-22
+
+### Fixed
+
+- Prevent resuming an idle thread in Conn or Codex from replaying previous
+  assistant completions as duplicate notifications.
+
 ## [0.1.0] - 2026-07-21
 
 Initial alpha release.
+
+### Fixed
+
+- Recover the Codex-managed daemon after a reboot when its exact control socket
+  is absent and the version probe reports the corresponding `ENOENT` failure.
 
 ### Added
 
@@ -47,5 +52,6 @@ Initial alpha release.
 - Ad-hoc artifacts are for local testing only; public distribution requires a
   Developer ID signature and notarization.
 
-[Unreleased]: https://github.com/architpai/conn/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/architpai/conn/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/architpai/conn/releases/tag/v0.1.1
 [0.1.0]: https://github.com/architpai/conn/releases/tag/v0.1.0

@@ -2,7 +2,7 @@
 
 ## Supported platform
 
-Conn 0.1.0 supports Apple Silicon Macs on macOS 15.0 or later. It requires an
+Conn 0.1.1 supports Apple Silicon Macs on macOS 15.0 or later. It requires an
 authenticated Codex CLI/App Server version `0.144.5` or `0.144.6`; other
 versions fail closed instead of guessing at protocol compatibility.
 
@@ -16,18 +16,18 @@ The expected output is `codex-cli 0.144.5` or `codex-cli 0.144.6`.
 
 ## Install the release build
 
-1. Download `Conn-0.1.0-macos-arm64.zip` and its `.sha256` file from the
+1. Download `Conn-0.1.1-macos-arm64.zip` and its `.sha256` file from the
    [latest GitHub release](https://github.com/architpai/conn/releases/latest).
 2. In Terminal, change to the download directory and verify the archive:
 
    ```sh
-   shasum -a 256 -c Conn-0.1.0-macos-arm64.zip.sha256
-   ditto -x -k Conn-0.1.0-macos-arm64.zip Conn-0.1.0
-   cd Conn-0.1.0
-   shasum -a 256 -c Conn-0.1.0-adhoc.dmg.sha256
+   shasum -a 256 -c Conn-0.1.1-macos-arm64.zip.sha256
+   ditto -x -k Conn-0.1.1-macos-arm64.zip Conn-0.1.1
+   cd Conn-0.1.1
+   shasum -a 256 -c Conn-0.1.1-adhoc.dmg.sha256
    ```
 
-3. Open `Conn-0.1.0-adhoc.dmg` and drag **Conn** into **Applications**.
+3. Open `Conn-0.1.1-adhoc.dmg` and drag **Conn** into **Applications**.
 4. Because this alpha is ad-hoc signed and not notarized, open it the first time
    by Control-clicking `/Applications/Conn.app`, choosing **Open**, and then
    choosing **Open** again. If macOS still blocks it, open **System Settings →
@@ -78,7 +78,7 @@ present in the built application.
 ## Troubleshooting
 
 - **App Server version incompatible:** install or select Codex `0.144.5` or
-  `0.144.6`. Conn 0.1.0 deliberately rejects newer or unknown versions.
+  `0.144.6`. Conn 0.1.1 deliberately rejects newer or unknown versions.
 - **No threads are visible:** Managed Daemon Mode only shows threads connected
   through the Codex-managed daemon. It does not claim every local Desktop, CLI,
   IDE, cloud, or web thread.

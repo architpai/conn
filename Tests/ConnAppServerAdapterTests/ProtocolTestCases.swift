@@ -86,7 +86,7 @@ enum ProtocolTestCases {
 
     private static func decodesCapabilitiesTolerantly(in suite: inout TestSuite) {
         let payload = Data(
-            #"{"clientInfo":{"name":"conn","title":"Conn","version":"0.1.0"},"capabilities":{"experimentalApi":true,"requestAttestation":false,"futureCapability":{"mode":"observe"}}}"#.utf8
+            #"{"clientInfo":{"name":"conn","title":"Conn","version":"0.1.1"},"capabilities":{"experimentalApi":true,"requestAttestation":false,"futureCapability":{"mode":"observe"}}}"#.utf8
         )
 
         do {

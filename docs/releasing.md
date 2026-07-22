@@ -35,23 +35,23 @@ codesign --verify --deep --strict --verbose=2 .build/conn-app/Conn.app
 ```sh
 codesign --force --timestamp \
   --sign "Developer ID Application: NAME (TEAMID)" \
-  dist/Conn-0.1.0.dmg
-xcrun notarytool submit dist/Conn-0.1.0.dmg \
+  dist/Conn-0.1.1.dmg
+xcrun notarytool submit dist/Conn-0.1.1.dmg \
   --keychain-profile CONN_NOTARY --wait
-xcrun stapler staple dist/Conn-0.1.0.dmg
-xcrun stapler validate dist/Conn-0.1.0.dmg
+xcrun stapler staple dist/Conn-0.1.1.dmg
+xcrun stapler validate dist/Conn-0.1.1.dmg
 spctl --assess --type open --context context:primary-signature \
-  --verbose=4 dist/Conn-0.1.0.dmg
-./scripts/inspect-release.sh --dmg "$PWD/dist/Conn-0.1.0.dmg"
+  --verbose=4 dist/Conn-0.1.1.dmg
+./scripts/inspect-release.sh --dmg "$PWD/dist/Conn-0.1.1.dmg"
 ```
 
 Signing and stapling change the DMG bytes, so generate the checksum only after
 those operations:
 
 ```sh
-(cd dist && shasum -a 256 Conn-0.1.0.dmg > Conn-0.1.0.dmg.sha256)
+(cd dist && shasum -a 256 Conn-0.1.1.dmg > Conn-0.1.1.dmg.sha256)
 ```
 
-The 0.1.0 hackathon artifact uses the explicit `--ad-hoc` packaging path because
-the build machine has no Developer ID identity. That artifact must be labeled
-as unnotarized everywhere it is distributed.
+The alpha artifacts use the explicit `--ad-hoc` packaging path because the
+build machine has no Developer ID identity. They must be labeled as unnotarized
+everywhere they are distributed.
