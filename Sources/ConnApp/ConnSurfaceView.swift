@@ -65,7 +65,11 @@ struct ConnSurfaceView: View {
         .background(Color.black)
         .clipShape(islandShape)
         .animation(
-            .easeOut(duration: motion.style == .fadeOnly ? 0.12 : 0.18),
+            .easeOut(
+                duration: motion.style == .fadeOnly
+                    ? 0.12
+                    : ShellMotionPolicy.expandedContentFadeDuration
+            ),
             value: model.presentsExpandedContent
         )
         .animation(

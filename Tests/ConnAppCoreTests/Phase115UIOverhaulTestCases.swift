@@ -338,8 +338,20 @@ enum Phase115UIOverhaulTestCases {
         suite.check(standard.contentDelay > 0, "standard motion staggers content after geometry begins")
         suite.checkEqual(ShellMotionPolicy.springProgress(0), 0, "unfurl spring begins at the current geometry")
         suite.check(
-            ShellMotionPolicy.springProgress(0.5) > 1,
-            "unfurl spring has a real damped overshoot instead of a cubic ease label"
+            ShellMotionPolicy.springProgress(0.2) < 0.6,
+            "unfurl spring does not present a full-size empty panel near the start"
+        )
+        suite.check(
+            ShellMotionPolicy.springProgress(0.5) < 0.95,
+            "unfurl spring keeps visible geometry moving through the content delay"
+        )
+        suite.check(
+            ShellMotionPolicy.springProgress(0.9) > 1,
+            "unfurl spring retains a small late overshoot instead of becoming a cubic ease"
+        )
+        suite.check(
+            abs(ShellMotionPolicy.springProgress(0.999) - ShellMotionPolicy.springProgress(1)) < 0.001,
+            "unfurl spring approaches its destination continuously without a final-frame snap"
         )
         suite.checkEqual(ShellMotionPolicy.springProgress(1), 1, "unfurl spring settles exactly on its destination")
         suite.checkEqual(
@@ -359,17 +371,17 @@ enum Phase115UIOverhaulTestCases {
         )
         suite.check(
             !ShellMotionPolicy.shouldRevealExpandedContent(
-                linearProgress: 0.81,
+                linearProgress: ShellMotionPolicy.expandedContentRevealLinearProgress - 0.01,
                 hasPendingAnimatedGeometryRefresh: false
             ),
-            "expanded content stays unmounted before the near-settled threshold"
+            "expanded content stays unmounted before the reveal threshold"
         )
         suite.check(
             ShellMotionPolicy.shouldRevealExpandedContent(
                 linearProgress: ShellMotionPolicy.expandedContentRevealLinearProgress,
                 hasPendingAnimatedGeometryRefresh: false
             ),
-            "expanded content begins fading at the near-settled threshold"
+            "expanded content begins fading at the reveal threshold"
         )
         suite.check(
             !ShellMotionPolicy.shouldRevealExpandedContent(
@@ -388,8 +400,13 @@ enum Phase115UIOverhaulTestCases {
         suite.check(
             ShellMotionPolicy.springProgress(
                 ShellMotionPolicy.expandedContentRevealLinearProgress
-            ) > 0.98,
-            "the reveal threshold waits until spring geometry is visually settled"
+            ) > 0.92,
+            "the reveal threshold waits until the panel is substantially unfolded"
+        )
+        suite.check(
+            (1 - ShellMotionPolicy.expandedContentRevealLinearProgress) * standard.geometryDuration
+                > ShellMotionPolicy.expandedContentFadeDuration,
+            "expanded content finishes fading in before panel geometry settles"
         )
 
         let reduced = ShellMotionPolicy.presentation(reduceMotion: true)
