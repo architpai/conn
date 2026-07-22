@@ -64,22 +64,59 @@ public struct ShellUserFacingNotificationBatch: Equatable, Sendable, Identifiabl
 }
 
 public struct ShellUserFacingNotificationSeedLedger: Sendable {
-    private var seededThreadIDs: Set<AppServerThreadID> = []
+    private struct TurnFrontier: Equatable, Sendable {
+        let observationRevision: UInt64
+
+        init(_ turn: AppServerProjectedTurn) {
+            observationRevision = turn.observationRevision
+        }
+    }
+
+    private var seededNotificationIDs: Set<String> = []
+    private var scannedTurnFrontiers: [AppServerThreadID: [AppServerTurnID: TurnFrontier]] = [:]
 
     public init() {}
 
     public mutating func consume(
         _ threads: [AppServerProjectedThread]
     ) -> Set<String> {
-        let unseededThreads = threads.filter {
-            !$0.turns.isEmpty && !seededThreadIDs.contains($0.id)
+        let currentThreadIDs = Set(threads.map(\.id))
+        scannedTurnFrontiers = scannedTurnFrontiers.filter {
+            currentThreadIDs.contains($0.key)
         }
-        seededThreadIDs.formUnion(unseededThreads.map(\.id))
-        return ShellUserFacingNotificationPolicy.silentSeedIDs(from: unseededThreads)
+
+        var candidates: Set<String> = []
+        for thread in threads {
+            let priorFrontiers = scannedTurnFrontiers[thread.id] ?? [:]
+            var currentFrontiers: [AppServerTurnID: TurnFrontier] = [:]
+            var changedTurns: [AppServerProjectedTurn] = []
+            currentFrontiers.reserveCapacity(thread.turns.count)
+            changedTurns.reserveCapacity(1)
+
+            for turn in thread.turns {
+                let frontier = TurnFrontier(turn)
+                currentFrontiers[turn.id] = frontier
+                if priorFrontiers[turn.id] != frontier {
+                    changedTurns.append(turn)
+                }
+            }
+            scannedTurnFrontiers[thread.id] = currentFrontiers
+            candidates.formUnion(
+                ShellUserFacingNotificationPolicy.silentSeedIDs(
+                    threadID: thread.id,
+                    from: changedTurns
+                )
+            )
+        }
+
+        let newlySeeded = candidates.subtracting(seededNotificationIDs)
+        seededNotificationIDs.formUnion(candidates)
+        return newlySeeded
     }
 
     public mutating func reset() {
-        seededThreadIDs.removeAll(keepingCapacity: false)
+        seededNotificationIDs.removeAll(keepingCapacity: false)
+        scannedTurnFrontiers.removeAll(keepingCapacity: false)
     }
 }
 
@@ -151,21 +188,28 @@ public enum ShellUserFacingNotificationPolicy {
     public static func silentSeedIDs(
         from threads: [AppServerProjectedThread]
     ) -> Set<String> {
-        Set(threads.flatMap { thread in
-            thread.turns.flatMap { turn in
-                turn.items.compactMap { item in
-                    guard item.kind == .agentMessage,
-                          item.status == .completed,
-                          item.presentation == nil
-                    else { return nil }
-                    return AppServerPresentationIdentity.notification(
-                        threadID: thread.id,
-                        timelineItemID: AppServerPresentationIdentity.timelineItem(
-                            turnID: turn.id,
-                            itemID: item.id
-                        )
+        threads.reduce(into: Set<String>()) { result, thread in
+            result.formUnion(silentSeedIDs(threadID: thread.id, from: thread.turns))
+        }
+    }
+
+    fileprivate static func silentSeedIDs(
+        threadID: AppServerThreadID,
+        from turns: [AppServerProjectedTurn]
+    ) -> Set<String> {
+        Set(turns.flatMap { turn in
+            turn.items.compactMap { item in
+                guard item.kind == .agentMessage,
+                      item.status == .completed,
+                      item.presentation == nil
+                else { return nil }
+                return AppServerPresentationIdentity.notification(
+                    threadID: threadID,
+                    timelineItemID: AppServerPresentationIdentity.timelineItem(
+                        turnID: turn.id,
+                        itemID: item.id
                     )
-                }
+                )
             }
         })
     }

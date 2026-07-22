@@ -918,6 +918,9 @@ public struct AppServerProjectedTurn: Codable, Equatable, Sendable, Identifiable
     public let items: [AppServerProjectedItem]
     /// Runtime-only structured plan. Custom Codable intentionally omits it.
     public let plan: AppServerTurnPlan?
+    /// Runtime-only projection revision used to detect any accepted mutation
+    /// without re-walking the turn's bounded item collection.
+    public let observationRevision: UInt64
 
     public init(
         id: AppServerTurnID,
@@ -926,7 +929,8 @@ public struct AppServerProjectedTurn: Codable, Equatable, Sendable, Identifiable
         completedAt: Date?,
         itemsView: AppServerTurnItemsView,
         items: [AppServerProjectedItem],
-        plan: AppServerTurnPlan? = nil
+        plan: AppServerTurnPlan? = nil,
+        observationRevision: UInt64 = 0
     ) {
         self.id = id
         self.status = status
@@ -935,6 +939,17 @@ public struct AppServerProjectedTurn: Codable, Equatable, Sendable, Identifiable
         self.itemsView = itemsView
         self.items = items
         self.plan = plan
+        self.observationRevision = observationRevision
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id
+            && lhs.status == rhs.status
+            && lhs.startedAt == rhs.startedAt
+            && lhs.completedAt == rhs.completedAt
+            && lhs.itemsView == rhs.itemsView
+            && lhs.items == rhs.items
+            && lhs.plan == rhs.plan
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -955,6 +970,7 @@ public struct AppServerProjectedTurn: Codable, Equatable, Sendable, Identifiable
         itemsView = try container.decode(AppServerTurnItemsView.self, forKey: .itemsView)
         items = try container.decode([AppServerProjectedItem].self, forKey: .items)
         plan = nil
+        observationRevision = 0
     }
 
     public func encode(to encoder: any Encoder) throws {

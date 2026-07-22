@@ -1833,10 +1833,11 @@ final class ConnViewModel: ObservableObject {
         from presentation: AppServerDomainPresentation
     ) {
         let collected = ShellUserFacingNotificationPolicy.collect(from: presentation.threads)
-        // Checkpoints retain stable completed-item identities while omitting
-        // runtime-only prose. Seed each thread when its bounded history first
-        // appears so later inventory pages and either resume path cannot replay
-        // restored historical text.
+        // Checkpoints retain completed-item identities while omitting
+        // runtime-only prose, and resumed history can remap a live item ID.
+        // Seed every newly observed textless completion so either resume path
+        // cannot replay restored historical text on the next turn. The ledger
+        // scans only turns whose structural frontier changed.
         seenUserFacingNotificationIDs.formUnion(
             notificationSeedLedger.consume(latestSnapshot?.threads ?? [])
         )

@@ -43,6 +43,7 @@ public actor AppServerProjectionStore {
         var planSequence: UInt64
         var planConflict: Bool
         var sequence: UInt64
+        var mutationRevision: UInt64
         var terminalConflict: Bool
     }
 
@@ -203,6 +204,7 @@ public actor AppServerProjectionStore {
                     planSequence: 0,
                     planConflict: false,
                     sequence: 0,
+                    mutationRevision: 0,
                     terminalConflict: projectedTurn.status == .unknown
                 )
             }
@@ -924,6 +926,7 @@ public actor AppServerProjectionStore {
             planSequence: 0,
             planConflict: false,
             sequence: sequence,
+            mutationRevision: 0,
             terminalConflict: false
         )
         let previous = turn.items[input.id]
@@ -935,6 +938,7 @@ public actor AppServerProjectionStore {
         )
         guard turn.items[input.id] != previous else { return .duplicate }
         turn.sequence = max(turn.sequence, sequence)
+        turn.mutationRevision &+= 1
         thread.turns[turnID] = turn
         thread.freshness = terminalConflict ? .stale : .live
         if terminalConflict {
@@ -1046,6 +1050,7 @@ public actor AppServerProjectionStore {
         stored.sequence = sequence
         turn.items[itemID] = stored
         turn.sequence = max(turn.sequence, sequence)
+        turn.mutationRevision &+= 1
         thread.turns[turnID] = turn
         thread.freshness = .live
         thread.lastObservedAt = max(thread.lastObservedAt, observedAt)
@@ -1122,6 +1127,7 @@ public actor AppServerProjectionStore {
             planSequence: 0,
             planConflict: false,
             sequence: sequence,
+            mutationRevision: 0,
             terminalConflict: false
         )
         guard sequence >= turn.planSequence else { return .duplicate }
@@ -1135,6 +1141,7 @@ public actor AppServerProjectionStore {
             turn.planConflict = false
         }
         turn.sequence = max(turn.sequence, sequence)
+        turn.mutationRevision &+= 1
         thread.turns[turnID] = turn
         thread.freshness = .live
         thread.lastObservedAt = max(thread.lastObservedAt, observedAt)
@@ -1217,7 +1224,8 @@ public actor AppServerProjectionStore {
         sequence: UInt64,
         authoritative: Bool
     ) -> Bool {
-        var turn = thread.turns[input.id] ?? StoredTurn(
+        let previousTurn = thread.turns[input.id]
+        var turn = previousTurn ?? StoredTurn(
             id: input.id,
             status: input.status,
             startedAt: input.startedAt,
@@ -1228,6 +1236,7 @@ public actor AppServerProjectionStore {
             planSequence: 0,
             planConflict: false,
             sequence: sequence,
+            mutationRevision: 0,
             terminalConflict: input.status == .unknown
         )
 
@@ -1282,6 +1291,9 @@ public actor AppServerProjectionStore {
         }
         turn.sequence = max(turn.sequence, sequence)
         trimTurn(&turn)
+        if let previousTurn, turn != previousTurn {
+            turn.mutationRevision &+= 1
+        }
         thread.turns[input.id] = turn
         return turn.terminalConflict || turn.items.values.contains(where: \.terminalConflict)
     }
@@ -1489,7 +1501,8 @@ public actor AppServerProjectionStore {
                 if $0.order != $1.order { return $0.order < $1.order }
                 return $0.value.id < $1.value.id
             }.map(\.value),
-            plan: turn.plan
+            plan: turn.plan,
+            observationRevision: turn.mutationRevision
         )
     }
 
@@ -1734,6 +1747,7 @@ public actor AppServerProjectionStore {
             guard var thread = state.threads[threadID] else { continue }
             for turnID in thread.turns.keys {
                 guard var turn = thread.turns[turnID] else { continue }
+                var didStripPresentation = false
                 for itemID in turn.items.keys {
                     let location = PresentationLocation(
                         threadID: threadID,
@@ -1753,7 +1767,9 @@ public actor AppServerProjectionStore {
                         presentation: nil
                     ))
                     turn.items[itemID] = item
+                    didStripPresentation = true
                 }
+                if didStripPresentation { turn.mutationRevision &+= 1 }
                 thread.turns[turnID] = turn
             }
             state.threads[threadID] = thread
@@ -1849,7 +1865,9 @@ public actor AppServerProjectionStore {
         }
         for id in thread.turns.keys {
             guard var turn = thread.turns[id] else { continue }
+            let priorItems = turn.items
             trimTurn(&turn)
+            if turn.items != priorItems { turn.mutationRevision &+= 1 }
             thread.turns[id] = turn
         }
     }

@@ -281,76 +281,209 @@ enum Phase115NotificationPolicyTestCases {
             ))
         )))
         let laterSnapshot = await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_003))
+        let laterThreadSeededIDs = seedLedger.consume(laterSnapshot.threads)
         suite.checkEqual(
-            seedLedger.consume(laterSnapshot.threads).count,
+            laterThreadSeededIDs.count,
             1,
             "a completed shell introduced by a later inventory publication is seeded once"
         )
         suite.checkEqual(
             seedLedger.consume(laterSnapshot.threads),
             [],
-            "already-scanned thread histories are not repeatedly traversed or seeded"
+            "already-seeded completed shells are not returned again"
         )
 
+        let replayedTurnID = AppServerTurnID(rawValue: "same-thread-later-turn")
+        let replayedItemID = AppServerItemID(rawValue: "same-thread-later-answer")
         _ = await store.apply(.delta(.init(
             cursor: .init(connection: connection, sequence: 3),
             observedAt: Date(timeIntervalSince1970: 1_850_000_004),
+            delta: .turnUpsert(
+                threadID: threadID,
+                turn: .init(
+                    id: replayedTurnID,
+                    status: .completed,
+                    completedAt: Date(timeIntervalSince1970: 1_850_000_004),
+                    itemsView: .full,
+                    items: [.init(
+                        id: replayedItemID,
+                        kind: .agentMessage,
+                        status: .completed,
+                        completedAt: Date(timeIntervalSince1970: 1_850_000_004),
+                        presentation: nil
+                    )]
+                )
+            )
+        )))
+        let sameThreadLateSnapshot = await store.snapshot(
+            at: Date(timeIntervalSince1970: 1_850_000_004)
+        )
+        let sameThreadSeededIDs = seedLedger.consume(sameThreadLateSnapshot.threads)
+        suite.checkEqual(
+            sameThreadSeededIDs.count,
+            1,
+            "a later completed shell in an already-seeded thread receives its own silent seed"
+        )
+        suite.checkEqual(
+            seedLedger.consume(sameThreadLateSnapshot.threads),
+            [],
+            "the later same-thread shell is seeded exactly once"
+        )
+
+        let mutatingTurnID = AppServerTurnID(rawValue: "same-turn-mutation")
+        let mutatingItemID = AppServerItemID(rawValue: "same-item-mutation")
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 5),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_005),
+            delta: .turnUpsert(
+                threadID: threadID,
+                turn: .init(
+                    id: mutatingTurnID,
+                    status: .inProgress,
+                    startedAt: Date(timeIntervalSince1970: 1_850_000_005),
+                    itemsView: .full,
+                    items: [.init(
+                        id: mutatingItemID,
+                        kind: .agentMessage,
+                        status: .started
+                    )]
+                )
+            )
+        )))
+        let beforeSameItemCompletion = await store.snapshot(
+            at: Date(timeIntervalSince1970: 1_850_000_005)
+        )
+        suite.checkEqual(
+            seedLedger.consume(beforeSameItemCompletion.threads),
+            [],
+            "an in-progress agent item is not silently seeded"
+        )
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 4),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_006),
             delta: .itemUpsert(
                 threadID: threadID,
-                turnID: turnID,
+                turnID: mutatingTurnID,
                 item: .init(
-                    id: oldItemID,
+                    id: mutatingItemID,
                     kind: .agentMessage,
                     status: .completed,
-                    completedAt: Date(timeIntervalSince1970: 1_850_000_000),
+                    completedAt: Date(timeIntervalSince1970: 1_850_000_006),
+                    presentation: nil
+                )
+            )
+        )))
+        let sameItemMutationSeededIDs = seedLedger.consume(
+            await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_006))
+                .threads
+        )
+        suite.checkEqual(
+            sameItemMutationSeededIDs.count,
+            1,
+            "an older terminal fact changing the same item to a textless completion is seeded"
+        )
+
+        let activeTurnID = AppServerTurnID(rawValue: "new-active-turn")
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 6),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_007),
+            delta: .turnUpsert(
+                threadID: threadID,
+                turn: .init(
+                    id: activeTurnID,
+                    status: .inProgress,
+                    startedAt: Date(timeIntervalSince1970: 1_850_000_007),
+                    itemsView: .full
+                )
+            )
+        )))
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 7),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_008),
+            delta: .itemUpsert(
+                threadID: threadID,
+                turnID: replayedTurnID,
+                item: .init(
+                    id: replayedItemID,
+                    kind: .agentMessage,
+                    status: .completed,
+                    completedAt: Date(timeIntervalSince1970: 1_850_000_004),
                     presentation: .agentFinalText("Previous completion")
                 )
             )
         )))
+        var accumulatedSeenIDs = seededIDs
+        accumulatedSeenIDs.formUnion(laterThreadSeededIDs)
+        accumulatedSeenIDs.formUnion(sameThreadSeededIDs)
+        accumulatedSeenIDs.formUnion(sameItemMutationSeededIDs)
         let resumed = AppServerDomainPresentation(
-            snapshot: await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_004)),
+            snapshot: await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_008)),
             runtimeStatus: .init(phase: .connected, detail: "Testing resume seeding."),
-            now: Date(timeIntervalSince1970: 1_850_000_004),
+            now: Date(timeIntervalSince1970: 1_850_000_008),
             detailedThreadIDs: [threadID]
+        )
+        let resumedNotifications = ShellUserFacingNotificationPolicy.collect(
+            from: resumed.threads
+        )
+        suite.check(
+            resumedNotifications.contains { sameThreadSeededIDs.contains($0.id) },
+            "the rematerialized prior answer retains the silently seeded history identity"
         )
         suite.checkEqual(
             ShellUserFacingNotificationPolicy.unseen(
-                ShellUserFacingNotificationPolicy.collect(from: resumed.threads),
-                excluding: seededIDs
+                resumedNotifications,
+                excluding: accumulatedSeenIDs
             ).map(\.id),
             [],
-            "resume text for a persisted completion is not emitted as a duplicate notification"
+            "starting the next turn does not replay the previous completion notification"
         )
 
         _ = await store.apply(.delta(.init(
-            cursor: .init(connection: connection, sequence: 4),
-            observedAt: Date(timeIntervalSince1970: 1_850_000_005),
+            cursor: .init(connection: connection, sequence: 8),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_009),
             delta: .itemUpsert(
                 threadID: threadID,
-                turnID: .init(rawValue: "new-turn"),
+                turnID: activeTurnID,
                 item: .init(
                     id: .init(rawValue: "new-answer"),
                     kind: .agentMessage,
                     status: .completed,
-                    completedAt: Date(timeIntervalSince1970: 1_850_000_005),
+                    completedAt: Date(timeIntervalSince1970: 1_850_000_009),
                     presentation: .agentFinalText("Genuinely new completion")
                 )
             )
         )))
+        let afterNewCompletionSnapshot = await store.snapshot(
+            at: Date(timeIntervalSince1970: 1_850_000_010)
+        )
+        suite.checkEqual(
+            seedLedger.consume(afterNewCompletionSnapshot.threads),
+            [],
+            "a current completion with live text is not silently seeded"
+        )
         let afterNewCompletion = AppServerDomainPresentation(
-            snapshot: await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_006)),
+            snapshot: afterNewCompletionSnapshot,
             runtimeStatus: .init(phase: .connected, detail: "Testing resume seeding."),
-            now: Date(timeIntervalSince1970: 1_850_000_006),
+            now: Date(timeIntervalSince1970: 1_850_000_010),
             detailedThreadIDs: [threadID]
         )
         let newNotifications = ShellUserFacingNotificationPolicy.unseen(
             ShellUserFacingNotificationPolicy.collect(from: afterNewCompletion.threads),
-            excluding: seededIDs
+            excluding: accumulatedSeenIDs
         )
         suite.check(
             newNotifications.count == 1
                 && newNotifications.first?.text == "Genuinely new completion",
             "a distinct new completed assistant item still emits exactly once"
+        )
+        accumulatedSeenIDs.formUnion(newNotifications.map(\.id))
+        suite.checkEqual(
+            ShellUserFacingNotificationPolicy.unseen(
+                ShellUserFacingNotificationPolicy.collect(from: afterNewCompletion.threads),
+                excluding: accumulatedSeenIDs
+            ),
+            [],
+            "the genuine current completion emits only once"
         )
     }
 
