@@ -43,6 +43,7 @@ public actor AppServerProjectionStore {
         var planSequence: UInt64
         var planConflict: Bool
         var sequence: UInt64
+        var hasLiveNotificationEpoch: Bool
         var terminalConflict: Bool
     }
 
@@ -203,6 +204,7 @@ public actor AppServerProjectionStore {
                     planSequence: 0,
                     planConflict: false,
                     sequence: 0,
+                    hasLiveNotificationEpoch: false,
                     terminalConflict: projectedTurn.status == .unknown
                 )
             }
@@ -298,6 +300,7 @@ public actor AppServerProjectionStore {
                 reset.plan = nil
                 reset.planSequence = 0
                 reset.planConflict = false
+                reset.hasLiveNotificationEpoch = false
                 if reset.status == .inProgress {
                     // An active turn ID from a prior connection is cache only.
                     // It becomes current again only through a structured read or
@@ -885,6 +888,10 @@ public actor AppServerProjectionStore {
             authoritative: false
         )
         guard thread.turns[input.id] != previous else { return .duplicate }
+        if var acceptedTurn = thread.turns[input.id] {
+            acceptedTurn.hasLiveNotificationEpoch = true
+            thread.turns[input.id] = acceptedTurn
+        }
         thread.freshness = terminalConflict ? .stale : .live
         if terminalConflict {
             state.requiresSnapshot = true
@@ -924,6 +931,7 @@ public actor AppServerProjectionStore {
             planSequence: 0,
             planConflict: false,
             sequence: sequence,
+            hasLiveNotificationEpoch: true,
             terminalConflict: false
         )
         let previous = turn.items[input.id]
@@ -935,6 +943,7 @@ public actor AppServerProjectionStore {
         )
         guard turn.items[input.id] != previous else { return .duplicate }
         turn.sequence = max(turn.sequence, sequence)
+        turn.hasLiveNotificationEpoch = true
         thread.turns[turnID] = turn
         thread.freshness = terminalConflict ? .stale : .live
         if terminalConflict {
@@ -1046,6 +1055,7 @@ public actor AppServerProjectionStore {
         stored.sequence = sequence
         turn.items[itemID] = stored
         turn.sequence = max(turn.sequence, sequence)
+        turn.hasLiveNotificationEpoch = true
         thread.turns[turnID] = turn
         thread.freshness = .live
         thread.lastObservedAt = max(thread.lastObservedAt, observedAt)
@@ -1122,6 +1132,7 @@ public actor AppServerProjectionStore {
             planSequence: 0,
             planConflict: false,
             sequence: sequence,
+            hasLiveNotificationEpoch: true,
             terminalConflict: false
         )
         guard sequence >= turn.planSequence else { return .duplicate }
@@ -1135,6 +1146,7 @@ public actor AppServerProjectionStore {
             turn.planConflict = false
         }
         turn.sequence = max(turn.sequence, sequence)
+        turn.hasLiveNotificationEpoch = true
         thread.turns[turnID] = turn
         thread.freshness = .live
         thread.lastObservedAt = max(thread.lastObservedAt, observedAt)
@@ -1228,6 +1240,7 @@ public actor AppServerProjectionStore {
             planSequence: 0,
             planConflict: false,
             sequence: sequence,
+            hasLiveNotificationEpoch: false,
             terminalConflict: input.status == .unknown
         )
 
@@ -1489,7 +1502,8 @@ public actor AppServerProjectionStore {
                 if $0.order != $1.order { return $0.order < $1.order }
                 return $0.value.id < $1.value.id
             }.map(\.value),
-            plan: turn.plan
+            plan: turn.plan,
+            hasLiveNotificationEpoch: turn.hasLiveNotificationEpoch
         )
     }
 

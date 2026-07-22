@@ -289,6 +289,26 @@ public struct AppServerTimelineItemPresentation: Equatable, Sendable, Identifiab
     }
 }
 
+enum AppServerPresentationIdentity {
+    static func timelineItem(
+        turnID: AppServerTurnID,
+        itemID: AppServerItemID
+    ) -> String {
+        "item|\(component(turnID.rawValue))|\(component(itemID.rawValue))"
+    }
+
+    static func notification(
+        threadID: AppServerThreadID,
+        timelineItemID: String
+    ) -> String {
+        "thread|\(component(threadID.rawValue))|\(component(timelineItemID))"
+    }
+
+    private static func component(_ value: String) -> String {
+        "\(value.utf8.count)#\(value)"
+    }
+}
+
 public enum AppServerAttentionResponseStyle: Equatable, Sendable {
     case approval
     case input
@@ -1119,7 +1139,10 @@ public struct AppServerThreadPresentation: Equatable, Sendable, Identifiable {
             ?? threadUpdatedAt
         let metadata = itemMetadata(item)
         return .init(
-            id: "item:\(turnID.rawValue):\(item.id.rawValue)",
+            id: AppServerPresentationIdentity.timelineItem(
+                turnID: turnID,
+                itemID: item.id
+            ),
             turnID: turnID.rawValue,
             sourceOrder: sourceOrder,
             category: metadata.category,

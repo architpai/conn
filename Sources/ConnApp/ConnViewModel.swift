@@ -169,6 +169,7 @@ final class ConnViewModel: ObservableObject {
     private var compactShelfTask: Task<Void, Never>?
     private var didSeedUserFacingNotifications = false
     private var seenUserFacingNotificationIDs: Set<String> = []
+    private var notificationSeedLedger = ShellUserFacingNotificationSeedLedger()
     private var notificationHydratedThreadIDs: Set<String> = []
     private var pendingUserFacingNotifications: [ShellUserFacingNotification] = []
     private var newThreadSelectionTask: Task<Void, Never>?
@@ -1832,6 +1833,15 @@ final class ConnViewModel: ObservableObject {
         from presentation: AppServerDomainPresentation
     ) {
         let collected = ShellUserFacingNotificationPolicy.collect(from: presentation.threads)
+        // A turn is eligible only during its observed live epoch. Once sealed,
+        // every later hydration/remap is historical regardless of item ID or
+        // whether the restored prose arrives atomically.
+        seenUserFacingNotificationIDs.formUnion(
+            notificationSeedLedger.consume(
+                latestSnapshot?.threads ?? [],
+                notifications: collected
+            )
+        )
         let detailedHydrationThreadIDs = Set(
             (latestSnapshot?.threads ?? []).compactMap { thread in
                 thread.turns.contains(where: { $0.itemsView == .full })
@@ -1874,6 +1884,7 @@ final class ConnViewModel: ObservableObject {
         compactNotificationBatch = nil
         pendingUserFacingNotifications.removeAll(keepingCapacity: false)
         seenUserFacingNotificationIDs.removeAll(keepingCapacity: false)
+        notificationSeedLedger.reset()
         notificationHydratedThreadIDs.removeAll(keepingCapacity: false)
         didSeedUserFacingNotifications = false
     }

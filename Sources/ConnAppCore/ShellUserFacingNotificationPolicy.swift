@@ -5,6 +5,7 @@ public struct ShellUserFacingNotification: Equatable, Sendable, Identifiable {
     public let id: String
     public let threadID: AppServerThreadID
     public let threadTitle: String
+    public let turnID: AppServerTurnID?
     public let itemID: String
     public let text: String
     public let observedAt: Date
@@ -15,6 +16,7 @@ public struct ShellUserFacingNotification: Equatable, Sendable, Identifiable {
         id: String,
         threadID: AppServerThreadID,
         threadTitle: String,
+        turnID: AppServerTurnID? = nil,
         itemID: String,
         text: String,
         observedAt: Date,
@@ -24,6 +26,7 @@ public struct ShellUserFacingNotification: Equatable, Sendable, Identifiable {
         self.id = id
         self.threadID = threadID
         self.threadTitle = threadTitle
+        self.turnID = turnID
         self.itemID = itemID
         self.text = text
         self.observedAt = observedAt
@@ -60,6 +63,82 @@ public struct ShellUserFacingNotificationBatch: Equatable, Sendable, Identifiabl
         let messageCount = groups.reduce(0) { $0 + $1.messages.count }
         let headingCount = groups.count
         return min(112, CGFloat(24 + messageCount * 28 + headingCount * 14))
+    }
+}
+
+public struct ShellUserFacingNotificationSeedLedger: Sendable {
+    private struct TurnKey: Hashable, Sendable {
+        let threadID: AppServerThreadID
+        let turnID: AppServerTurnID
+    }
+
+    private enum TurnLifecycle: Sendable {
+        case active
+        case sealed
+    }
+
+    private var turnLifecycles: [TurnKey: TurnLifecycle] = [:]
+
+    public init() {}
+
+    public mutating func consume(
+        _ threads: [AppServerProjectedThread],
+        notifications: [ShellUserFacingNotification]
+    ) -> Set<String> {
+        let notificationIDsByTurn = Dictionary(grouping: notifications.compactMap { notification in
+            notification.turnID.map {
+                (TurnKey(
+                    threadID: notification.threadID,
+                    turnID: $0
+                ), notification.id)
+            }
+        }, by: \.0).mapValues { Set($0.map(\.1)) }
+
+        var suppressedNotificationIDs: Set<String> = []
+        for thread in threads {
+            for turn in thread.turns {
+                let key = TurnKey(
+                    threadID: thread.id,
+                    turnID: turn.id
+                )
+                let notificationIDs = notificationIDsByTurn[key] ?? []
+                switch turnLifecycles[key] {
+                case nil:
+                    if turn.status == .inProgress {
+                        turnLifecycles[key] = .active
+                        if !turn.hasLiveNotificationEpoch {
+                            // Attaching to an already-running turn establishes
+                            // a baseline; a live delta opens immediate eligibility.
+                            suppressedNotificationIDs.formUnion(notificationIDs)
+                        }
+                    } else if turn.status.isTerminal,
+                              turn.hasLiveNotificationEpoch {
+                        // A full live lifecycle can be reduced in one inbound
+                        // batch. Permit that coalesced terminal publication,
+                        // then seal it just like active-to-terminal.
+                        turnLifecycles[key] = .sealed
+                    } else {
+                        turnLifecycles[key] = .sealed
+                        suppressedNotificationIDs.formUnion(notificationIDs)
+                    }
+
+                case .active:
+                    if turn.status.isTerminal {
+                        // Let the active-to-terminal publication through once,
+                        // then reject every later hydration/remap for this turn.
+                        turnLifecycles[key] = .sealed
+                    }
+
+                case .sealed:
+                    suppressedNotificationIDs.formUnion(notificationIDs)
+                }
+            }
+        }
+        return suppressedNotificationIDs
+    }
+
+    public mutating func reset() {
+        turnLifecycles.removeAll(keepingCapacity: false)
     }
 }
 
@@ -108,9 +187,13 @@ public enum ShellUserFacingNotificationPolicy {
                       let text = item.detail?.trimmingCharacters(in: .whitespacesAndNewlines)
                 else { return nil }
                 return ShellUserFacingNotification(
-                    id: "\(thread.id):\(item.id)",
+                    id: AppServerPresentationIdentity.notification(
+                        threadID: thread.threadID,
+                        timelineItemID: item.id
+                    ),
                     threadID: thread.threadID,
                     threadTitle: thread.title,
+                    turnID: item.turnID.map(AppServerTurnID.init(rawValue:)),
                     itemID: item.id,
                     text: text,
                     observedAt: item.observedAt,
