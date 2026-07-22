@@ -63,6 +63,26 @@ public struct ShellUserFacingNotificationBatch: Equatable, Sendable, Identifiabl
     }
 }
 
+public struct ShellUserFacingNotificationSeedLedger: Sendable {
+    private var seededThreadIDs: Set<AppServerThreadID> = []
+
+    public init() {}
+
+    public mutating func consume(
+        _ threads: [AppServerProjectedThread]
+    ) -> Set<String> {
+        let unseededThreads = threads.filter {
+            !$0.turns.isEmpty && !seededThreadIDs.contains($0.id)
+        }
+        seededThreadIDs.formUnion(unseededThreads.map(\.id))
+        return ShellUserFacingNotificationPolicy.silentSeedIDs(from: unseededThreads)
+    }
+
+    public mutating func reset() {
+        seededThreadIDs.removeAll(keepingCapacity: false)
+    }
+}
+
 public enum ShellUserFacingNotificationPolicy {
     public static let maximumMessagesPerBatch = 2
     public static let minimumDuration: TimeInterval = 5
@@ -108,7 +128,10 @@ public enum ShellUserFacingNotificationPolicy {
                       let text = item.detail?.trimmingCharacters(in: .whitespacesAndNewlines)
                 else { return nil }
                 return ShellUserFacingNotification(
-                    id: "\(thread.id):\(item.id)",
+                    id: AppServerPresentationIdentity.notification(
+                        threadID: thread.threadID,
+                        timelineItemID: item.id
+                    ),
                     threadID: thread.threadID,
                     threadTitle: thread.title,
                     itemID: item.id,
@@ -119,6 +142,32 @@ public enum ShellUserFacingNotificationPolicy {
                 )
             }
         }.sorted(by: chronological)
+    }
+
+    /// Completed assistant items can be restored from a privacy-bounded
+    /// checkpoint before their runtime-only text is materialized again. Seed
+    /// those stable identities silently so a later resume cannot replay the
+    /// historical completion as a new notification.
+    public static func silentSeedIDs(
+        from threads: [AppServerProjectedThread]
+    ) -> Set<String> {
+        Set(threads.flatMap { thread in
+            thread.turns.flatMap { turn in
+                turn.items.compactMap { item in
+                    guard item.kind == .agentMessage,
+                          item.status == .completed,
+                          item.presentation == nil
+                    else { return nil }
+                    return AppServerPresentationIdentity.notification(
+                        threadID: thread.id,
+                        timelineItemID: AppServerPresentationIdentity.timelineItem(
+                            turnID: turn.id,
+                            itemID: item.id
+                        )
+                    )
+                }
+            }
+        })
     }
 
     public static func unseen(

@@ -8,6 +8,8 @@ public alpha releases.
 
 ### Fixed
 
+- Prevent resuming an idle thread in Conn or Codex from replaying its previous
+  assistant completion as a duplicate notification.
 - Recover the Codex-managed daemon after a reboot when its exact control socket
   is absent and the version probe reports the corresponding `ENOENT` failure.
 

@@ -169,6 +169,7 @@ final class ConnViewModel: ObservableObject {
     private var compactShelfTask: Task<Void, Never>?
     private var didSeedUserFacingNotifications = false
     private var seenUserFacingNotificationIDs: Set<String> = []
+    private var notificationSeedLedger = ShellUserFacingNotificationSeedLedger()
     private var notificationHydratedThreadIDs: Set<String> = []
     private var pendingUserFacingNotifications: [ShellUserFacingNotification] = []
     private var newThreadSelectionTask: Task<Void, Never>?
@@ -1832,6 +1833,13 @@ final class ConnViewModel: ObservableObject {
         from presentation: AppServerDomainPresentation
     ) {
         let collected = ShellUserFacingNotificationPolicy.collect(from: presentation.threads)
+        // Checkpoints retain stable completed-item identities while omitting
+        // runtime-only prose. Seed each thread when its bounded history first
+        // appears so later inventory pages and either resume path cannot replay
+        // restored historical text.
+        seenUserFacingNotificationIDs.formUnion(
+            notificationSeedLedger.consume(latestSnapshot?.threads ?? [])
+        )
         let detailedHydrationThreadIDs = Set(
             (latestSnapshot?.threads ?? []).compactMap { thread in
                 thread.turns.contains(where: { $0.itemsView == .full })
@@ -1874,6 +1882,7 @@ final class ConnViewModel: ObservableObject {
         compactNotificationBatch = nil
         pendingUserFacingNotifications.removeAll(keepingCapacity: false)
         seenUserFacingNotificationIDs.removeAll(keepingCapacity: false)
+        notificationSeedLedger.reset()
         notificationHydratedThreadIDs.removeAll(keepingCapacity: false)
         didSeedUserFacingNotifications = false
     }

@@ -31,7 +31,7 @@ private enum ConnAppCoreTestRunner {
             await Phase11LegacyPluginRetirementTestCases.run(into: &suite)
             Phase115UIOverhaulTestCases.run(into: &suite)
             Phase115CompactShelfMotionTestCases.run(into: &suite)
-            Phase115NotificationPolicyTestCases.run(into: &suite)
+            await Phase115NotificationPolicyTestCases.run(into: &suite)
             await Phase115ThreadPickerPolicyTestCases.run(into: &suite)
         } catch {
             suite.recordUnexpected(error, context: "unexpected top-level app-core test error")

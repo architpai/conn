@@ -3,11 +3,12 @@ import ConnAppCore
 import ConnDomain
 
 enum Phase115NotificationPolicyTestCases {
-    static func run(into suite: inout TestSuite) {
+    static func run(into suite: inout TestSuite) async {
         eligibility(into: &suite)
         grouping(into: &suite)
         unseenFiltering(into: &suite)
         hydrationSeeding(into: &suite)
+        await resumedHistoricalCompletionSeeding(into: &suite)
     }
 
     private static func eligibility(into suite: inout TestSuite) {
@@ -177,6 +178,180 @@ enum Phase115NotificationPolicyTestCases {
                 "first hydration seeds silently in \(visualState) state"
             )
         }
+    }
+
+    private static func resumedHistoricalCompletionSeeding(
+        into suite: inout TestSuite
+    ) async {
+        let connection = AppServerConnectionIdentity(
+            instanceID: UUID(uuidString: "11500000-0000-4000-8000-000000000006")!,
+            generation: 115
+        )
+        let threadID = AppServerThreadID(rawValue: "idle-thread")
+        let turnID = AppServerTurnID(rawValue: "old-turn")
+        let oldItemID = AppServerItemID(rawValue: "old-answer")
+        let store = AppServerProjectionStore()
+        _ = await store.apply(.connectionActivated(
+            identity: connection,
+            source: .managedDaemon,
+            featureSupport: .init(features: [.monitor])
+        ))
+        _ = await store.apply(.snapshot(.init(
+            cursor: .init(connection: connection, sequence: 1),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_001),
+            threads: [.init(
+                id: threadID,
+                sessionID: .init(rawValue: "idle-session"),
+                title: "Idle thread",
+                source: .appServer,
+                status: .idle,
+                updatedAt: Date(timeIntervalSince1970: 1_850_000_000),
+                turnsAreAuthoritative: true,
+                turns: [
+                    .init(
+                        id: turnID,
+                        status: .completed,
+                        completedAt: Date(timeIntervalSince1970: 1_850_000_000),
+                        itemsView: .full,
+                        items: [.init(
+                            id: oldItemID,
+                            kind: .agentMessage,
+                            status: .completed,
+                            completedAt: Date(timeIntervalSince1970: 1_850_000_000),
+                            presentation: nil
+                        )]
+                    ),
+                    .init(
+                        id: .init(rawValue: "b"),
+                        status: .completed,
+                        itemsView: .full,
+                        items: [.init(
+                            id: .init(rawValue: "c:d"),
+                            kind: .agentMessage,
+                            status: .completed,
+                            presentation: nil
+                        )]
+                    ),
+                    .init(
+                        id: .init(rawValue: "b:c"),
+                        status: .completed,
+                        itemsView: .full,
+                        items: [.init(
+                            id: .init(rawValue: "d"),
+                            kind: .agentMessage,
+                            status: .completed,
+                            presentation: nil
+                        )]
+                    ),
+                ]
+            )]
+        )))
+
+        let baseline = await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_002))
+        var seedLedger = ShellUserFacingNotificationSeedLedger()
+        let seededIDs = seedLedger.consume(baseline.threads)
+        suite.checkEqual(
+            seededIDs.count,
+            3,
+            "persisted assistant shells seed distinct identities even when raw IDs contain delimiters"
+        )
+
+        let laterThreadID = AppServerThreadID(rawValue: "later-idle-thread")
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 2),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_003),
+            delta: .threadUpsert(.init(
+                id: laterThreadID,
+                sessionID: .init(rawValue: "later-idle-session"),
+                title: "Later idle thread",
+                source: .appServer,
+                status: .idle,
+                updatedAt: Date(timeIntervalSince1970: 1_850_000_000),
+                turns: [.init(
+                    id: .init(rawValue: "later-old-turn"),
+                    status: .completed,
+                    itemsView: .full,
+                    items: [.init(
+                        id: .init(rawValue: "later-old-answer"),
+                        kind: .agentMessage,
+                        status: .completed,
+                        presentation: nil
+                    )]
+                )]
+            ))
+        )))
+        let laterSnapshot = await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_003))
+        suite.checkEqual(
+            seedLedger.consume(laterSnapshot.threads).count,
+            1,
+            "a completed shell introduced by a later inventory publication is seeded once"
+        )
+        suite.checkEqual(
+            seedLedger.consume(laterSnapshot.threads),
+            [],
+            "already-scanned thread histories are not repeatedly traversed or seeded"
+        )
+
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 3),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_004),
+            delta: .itemUpsert(
+                threadID: threadID,
+                turnID: turnID,
+                item: .init(
+                    id: oldItemID,
+                    kind: .agentMessage,
+                    status: .completed,
+                    completedAt: Date(timeIntervalSince1970: 1_850_000_000),
+                    presentation: .agentFinalText("Previous completion")
+                )
+            )
+        )))
+        let resumed = AppServerDomainPresentation(
+            snapshot: await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_004)),
+            runtimeStatus: .init(phase: .connected, detail: "Testing resume seeding."),
+            now: Date(timeIntervalSince1970: 1_850_000_004),
+            detailedThreadIDs: [threadID]
+        )
+        suite.checkEqual(
+            ShellUserFacingNotificationPolicy.unseen(
+                ShellUserFacingNotificationPolicy.collect(from: resumed.threads),
+                excluding: seededIDs
+            ).map(\.id),
+            [],
+            "resume text for a persisted completion is not emitted as a duplicate notification"
+        )
+
+        _ = await store.apply(.delta(.init(
+            cursor: .init(connection: connection, sequence: 4),
+            observedAt: Date(timeIntervalSince1970: 1_850_000_005),
+            delta: .itemUpsert(
+                threadID: threadID,
+                turnID: .init(rawValue: "new-turn"),
+                item: .init(
+                    id: .init(rawValue: "new-answer"),
+                    kind: .agentMessage,
+                    status: .completed,
+                    completedAt: Date(timeIntervalSince1970: 1_850_000_005),
+                    presentation: .agentFinalText("Genuinely new completion")
+                )
+            )
+        )))
+        let afterNewCompletion = AppServerDomainPresentation(
+            snapshot: await store.snapshot(at: Date(timeIntervalSince1970: 1_850_000_006)),
+            runtimeStatus: .init(phase: .connected, detail: "Testing resume seeding."),
+            now: Date(timeIntervalSince1970: 1_850_000_006),
+            detailedThreadIDs: [threadID]
+        )
+        let newNotifications = ShellUserFacingNotificationPolicy.unseen(
+            ShellUserFacingNotificationPolicy.collect(from: afterNewCompletion.threads),
+            excluding: seededIDs
+        )
+        suite.check(
+            newNotifications.count == 1
+                && newNotifications.first?.text == "Genuinely new completion",
+            "a distinct new completed assistant item still emits exactly once"
+        )
     }
 
     private static func notification(
