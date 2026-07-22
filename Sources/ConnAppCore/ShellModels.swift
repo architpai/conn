@@ -46,6 +46,8 @@ public struct ShellMotionPresentation: Equatable, Sendable {
 }
 
 public enum ShellMotionPolicy {
+    public static let expandedContentRevealLinearProgress = 0.82
+
     public static func presentation(reduceMotion: Bool) -> ShellMotionPresentation {
         reduceMotion
             ? .init(style: .fadeOnly, geometryDuration: 0, contentDelay: 0)
@@ -71,6 +73,14 @@ public enum ShellMotionPolicy {
         guard elapsed.isFinite else { return elapsed.sign == .minus ? 0 : 1 }
         return min(max(elapsed / duration, 0), 1)
     }
+
+    public static func shouldRevealExpandedContent(
+        linearProgress: Double,
+        hasPendingAnimatedGeometryRefresh: Bool
+    ) -> Bool {
+        !hasPendingAnimatedGeometryRefresh
+            && linearProgress >= expandedContentRevealLinearProgress
+    }
 }
 
 public enum ShellExpandedContentPresentationPolicy {
@@ -78,9 +88,32 @@ public enum ShellExpandedContentPresentationPolicy {
     /// the transcript and composer are not laid out at every intermediate size.
     public static func presentsExpandedContent(
         surface: ShellSurfaceState,
-        geometryTransitionInFlight: Bool
+        isRevealReady: Bool
     ) -> Bool {
-        surface == .expanded && !geometryTransitionInFlight
+        surface == .expanded && isRevealReady
+    }
+}
+
+public struct ShellSurfaceGeometryTransitionGeneration: Equatable, Sendable {
+    fileprivate let rawValue: UInt64
+}
+
+public struct ShellSurfaceGeometryTransitionGenerationGate: Equatable, Sendable {
+    private var value: UInt64 = 0
+
+    public init() {}
+
+    public mutating func begin() -> ShellSurfaceGeometryTransitionGeneration {
+        value &+= 1
+        return .init(rawValue: value)
+    }
+
+    public mutating func invalidate() {
+        value &+= 1
+    }
+
+    public func isCurrent(_ generation: ShellSurfaceGeometryTransitionGeneration) -> Bool {
+        generation.rawValue == value
     }
 }
 

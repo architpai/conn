@@ -298,10 +298,19 @@ final class ConnPanelController {
             connApplicationPID: ownPID
         )
         lifecycle.apply(.userExpand)
-        model.beginSurfaceGeometryTransition(to: .expanded)
-        applyGeometry(animated: true) { [weak self] in
-            self?.model.completeSurfaceGeometryTransition(to: .expanded)
-        }
+        let transition = model.beginSurfaceGeometryTransition(to: .expanded)
+        applyGeometry(
+            animated: true,
+            contentReveal: { [weak self] in
+                self?.model.revealExpandedContentDuringGeometryTransition(transition)
+            },
+            completion: { [weak self] in
+                self?.model.completeSurfaceGeometryTransition(
+                    to: .expanded,
+                    generation: transition
+                )
+            }
+        )
         performFocusDecision(decision)
         panel.makeKeyAndOrderFront(nil)
     }
@@ -313,10 +322,13 @@ final class ConnPanelController {
         // keeps lifecycle and rendered surface aligned, so no compact geometry
         // or focus restoration can run for that no-op transition.
         guard lifecycle.surface == .compact else { return }
-        model.beginSurfaceGeometryTransition(to: .compact)
+        let transition = model.beginSurfaceGeometryTransition(to: .compact)
         panel.resignKey()
         applyGeometry(animated: true) { [weak self] in
-            self?.model.completeSurfaceGeometryTransition(to: .compact)
+            self?.model.completeSurfaceGeometryTransition(
+                to: .compact,
+                generation: transition
+            )
         }
         if lifecycle.visibility == .visible { panel.orderFrontRegardless() }
         performFocusDecision(focus.apply(
@@ -426,11 +438,13 @@ final class ConnPanelController {
 
     private func applyGeometry(
         animated: Bool = false,
+        contentReveal: (() -> Void)? = nil,
         completion: (() -> Void)? = nil
     ) {
         if geometryTransitionInFlight {
             pendingGeometryRefresh = true
             pendingGeometryRefreshShouldAnimate = pendingGeometryRefreshShouldAnimate || animated
+            if let contentReveal { pendingGeometryCompletions.append(contentReveal) }
             if let completion { pendingGeometryCompletions.append(completion) }
             return
         }
@@ -460,11 +474,13 @@ final class ConnPanelController {
 
         guard shouldAnimate else {
             guard panel.frame != geometry.frame else {
+                contentReveal?()
                 completion?()
                 return
             }
             lockPanelSize(geometry.frame.size)
             panel.setFrame(geometry.frame, display: true)
+            contentReveal?()
             completion?()
             return
         }
@@ -476,6 +492,7 @@ final class ConnPanelController {
         guard startingFrame != destinationFrame else {
             geometryTransitionInFlight = false
             lockPanelSize(destinationFrame.size)
+            contentReveal?()
             completion?()
             return
         }
@@ -484,6 +501,7 @@ final class ConnPanelController {
         let startedAt = ProcessInfo.processInfo.systemUptime
         panelAnimationTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            var didRevealContent = false
             while true {
                 guard !Task.isCancelled else { return }
                 let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
@@ -500,6 +518,15 @@ final class ConnPanelController {
                 if self.panel.frame != frame {
                     self.panel.setFrame(frame, display: true)
                 }
+                if !didRevealContent,
+                   ShellMotionPolicy.shouldRevealExpandedContent(
+                       linearProgress: linearProgress,
+                       hasPendingAnimatedGeometryRefresh:
+                           self.pendingGeometryRefreshShouldAnimate
+                   ) {
+                    contentReveal?()
+                    didRevealContent = true
+                }
                 guard linearProgress < 1 else { break }
                 try? await Task.sleep(for: .seconds(frameInterval))
             }
@@ -509,8 +536,10 @@ final class ConnPanelController {
                 self.panel.setFrame(destinationFrame, display: true)
             }
             self.panelAnimationTask = nil
-            var completions = self.pendingGeometryCompletions
-            if let completion { completions.insert(completion, at: 0) }
+            var completions: [() -> Void] = []
+            if !didRevealContent, let contentReveal { completions.append(contentReveal) }
+            if let completion { completions.append(completion) }
+            completions.append(contentsOf: self.pendingGeometryCompletions)
             self.pendingGeometryCompletions.removeAll(keepingCapacity: true)
             if self.pendingGeometryRefresh {
                 let shouldAnimate = self.pendingGeometryRefreshShouldAnimate

@@ -17,6 +17,7 @@ enum Phase115UIOverhaulTestCases {
         testNewChatUsesDefaultWorkspace(into: &suite)
         testReduceMotionPolicy(into: &suite)
         testExpandedContentTransitionPolicy(into: &suite)
+        testSurfaceGeometryTransitionGeneration(into: &suite)
         testGraphiteChromePolicy(into: &suite)
         testTranscriptActivityDisclosurePolicy(into: &suite)
         testSharedDesktopLabsViewport(into: &suite)
@@ -356,6 +357,40 @@ enum Phase115UIOverhaulTestCases {
             1,
             "a delayed callback skips stale frames and completes on time"
         )
+        suite.check(
+            !ShellMotionPolicy.shouldRevealExpandedContent(
+                linearProgress: 0.81,
+                hasPendingAnimatedGeometryRefresh: false
+            ),
+            "expanded content stays unmounted before the near-settled threshold"
+        )
+        suite.check(
+            ShellMotionPolicy.shouldRevealExpandedContent(
+                linearProgress: ShellMotionPolicy.expandedContentRevealLinearProgress,
+                hasPendingAnimatedGeometryRefresh: false
+            ),
+            "expanded content begins fading at the near-settled threshold"
+        )
+        suite.check(
+            !ShellMotionPolicy.shouldRevealExpandedContent(
+                linearProgress: 1,
+                hasPendingAnimatedGeometryRefresh: true
+            ),
+            "a queued animated geometry correction defers content until the final frame settles"
+        )
+        suite.check(
+            ShellMotionPolicy.shouldRevealExpandedContent(
+                linearProgress: 1,
+                hasPendingAnimatedGeometryRefresh: false
+            ),
+            "a passive geometry refresh does not recreate the post-expansion gap"
+        )
+        suite.check(
+            ShellMotionPolicy.springProgress(
+                ShellMotionPolicy.expandedContentRevealLinearProgress
+            ) > 0.98,
+            "the reveal threshold waits until spring geometry is visually settled"
+        )
 
         let reduced = ShellMotionPolicy.presentation(reduceMotion: true)
         suite.checkEqual(reduced.style, .fadeOnly, "Reduce Motion switches to fade-only presentation")
@@ -367,23 +402,42 @@ enum Phase115UIOverhaulTestCases {
         suite.check(
             !ShellExpandedContentPresentationPolicy.presentsExpandedContent(
                 surface: .expanded,
-                geometryTransitionInFlight: true
+                isRevealReady: false
             ),
             "expanded content stays unmounted while panel geometry changes"
         )
         suite.check(
             ShellExpandedContentPresentationPolicy.presentsExpandedContent(
                 surface: .expanded,
-                geometryTransitionInFlight: false
+                isRevealReady: true
             ),
             "expanded content mounts after panel geometry settles"
         )
         suite.check(
             !ShellExpandedContentPresentationPolicy.presentsExpandedContent(
                 surface: .compact,
-                geometryTransitionInFlight: false
+                isRevealReady: true
             ),
             "compact presentation never constructs expanded content"
+        )
+    }
+
+    private static func testSurfaceGeometryTransitionGeneration(into suite: inout TestSuite) {
+        var gate = ShellSurfaceGeometryTransitionGenerationGate()
+        let expansion = gate.begin()
+        suite.check(gate.isCurrent(expansion), "a new geometry transition owns its callbacks")
+
+        let collapse = gate.begin()
+        suite.check(
+            !gate.isCurrent(expansion),
+            "a superseding collapse invalidates queued expansion callbacks"
+        )
+        suite.check(gate.isCurrent(collapse), "the superseding transition remains current")
+
+        gate.invalidate()
+        suite.check(
+            !gate.isCurrent(collapse),
+            "an immediate surface update invalidates all queued transition callbacks"
         )
     }
 

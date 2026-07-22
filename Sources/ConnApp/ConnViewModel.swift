@@ -30,6 +30,7 @@ final class ConnViewModel: ObservableObject {
     @Published private(set) var presentationDate = Date()
     @Published private(set) var surfaceState: ShellSurfaceState = .compact
     @Published private(set) var isSurfaceGeometryTransitionInFlight = false
+    @Published private(set) var isExpandedContentRevealReady = false
     @Published private(set) var compactShelf: ShellCompactShelfPresentation?
     @Published private(set) var compactNotificationBatch: ShellUserFacingNotificationBatch?
     @Published private(set) var panelPlacement: ShellPanelPlacement = .externalCapsule
@@ -164,6 +165,7 @@ final class ConnViewModel: ObservableObject {
     private var sharedDesktopDiagnosisGate = SharedDesktopDiagnosisGenerationGate()
     private var sharedDesktopDiagnosticsLease: SharedDesktopDiagnosticsFreshnessLease?
     private var newThreadModelLoadGeneration: UInt64 = 0
+    private var surfaceGeometryTransitionGate = ShellSurfaceGeometryTransitionGenerationGate()
     private var compactShelfTask: Task<Void, Never>?
     private var didSeedUserFacingNotifications = false
     private var seenUserFacingNotificationIDs: Set<String> = []
@@ -372,7 +374,7 @@ final class ConnViewModel: ObservableObject {
     var presentsExpandedContent: Bool {
         ShellExpandedContentPresentationPolicy.presentsExpandedContent(
             surface: surfaceState,
-            geometryTransitionInFlight: isSurfaceGeometryTransitionInFlight
+            isRevealReady: isExpandedContentRevealReady
         )
     }
     var canRequestSync: Bool { onRequestSync != nil }
@@ -593,22 +595,44 @@ final class ConnViewModel: ObservableObject {
     }
 
     func setSurfaceState(_ state: ShellSurfaceState) {
+        surfaceGeometryTransitionGate.invalidate()
+        isExpandedContentRevealReady = state == .expanded
         isSurfaceGeometryTransitionInFlight = false
         surfaceState = state
         if state == .compact { reconcileCompactShelf() }
         onCompactShelfVisibilityChanged?(state == .compact && compactShelf != nil)
     }
 
-    func beginSurfaceGeometryTransition(to state: ShellSurfaceState) {
+    @discardableResult
+    func beginSurfaceGeometryTransition(
+        to state: ShellSurfaceState
+    ) -> ShellSurfaceGeometryTransitionGeneration {
+        let generation = surfaceGeometryTransitionGate.begin()
         // Publish the transition guard first. When expansion begins, SwiftUI
         // must never observe an expanded surface with its heavy content mounted.
+        isExpandedContentRevealReady = false
         isSurfaceGeometryTransitionInFlight = true
         surfaceState = state
         if state == .compact { reconcileCompactShelf() }
+        return generation
     }
 
-    func completeSurfaceGeometryTransition(to state: ShellSurfaceState) {
-        guard surfaceState == state else { return }
+    func revealExpandedContentDuringGeometryTransition(
+        _ generation: ShellSurfaceGeometryTransitionGeneration
+    ) {
+        guard surfaceGeometryTransitionGate.isCurrent(generation),
+              surfaceState == .expanded,
+              isSurfaceGeometryTransitionInFlight else { return }
+        isExpandedContentRevealReady = true
+    }
+
+    func completeSurfaceGeometryTransition(
+        to state: ShellSurfaceState,
+        generation: ShellSurfaceGeometryTransitionGeneration
+    ) {
+        guard surfaceGeometryTransitionGate.isCurrent(generation),
+              surfaceState == state else { return }
+        isExpandedContentRevealReady = state == .expanded
         isSurfaceGeometryTransitionInFlight = false
     }
 
