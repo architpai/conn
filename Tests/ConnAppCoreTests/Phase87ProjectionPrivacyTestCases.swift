@@ -18,6 +18,7 @@ enum Phase87ProjectionPrivacyTestCases {
         try fileChangeCountsExcludePatchText(into: &suite)
         try gitBranchExcludesOriginAndSHA(into: &suite)
         try await runtimeFactsStayOutOfCheckpoints(into: &suite)
+        try await sensitiveRuntimeValuesStayOutOfCheckpoints(into: &suite)
     }
 
     private static func fileChangeCountsExcludePatchText(
@@ -351,6 +352,49 @@ enum Phase87ProjectionPrivacyTestCases {
                 && restored?.turns.first?.items.first?.presentation == nil,
             "restore cannot reconstruct any Phase 8.7 runtime-only fact"
         )
+    }
+
+    private static func sensitiveRuntimeValuesStayOutOfCheckpoints(
+        into suite: inout TestSuite
+    ) async throws {
+        let canaries = [
+            "RAW-PROVIDER-VALUE-CANARY",
+            "DRAFT-PROMPT-CANARY",
+            "STRUCTURED-ANSWER-CANARY",
+            "APPROVAL-DECISION-CANARY",
+            "RESPONSE-TOKEN-CANARY",
+            "AUTHENTICATION-MATERIAL-CANARY",
+        ]
+        let runtimeValues: [Any] = [
+            JSONValue.object(["providerPrivate": .string(canaries[0])]),
+            AppServerControlDraft(text: canaries[1]),
+            AppServerQuestionAnswers(valuesByQuestionID: ["question": [canaries[2]]]),
+            JSONValue.object(["decision": .string(canaries[3])]),
+            JSONValue.string(canaries[4]),
+            JSONValue.string(canaries[5]),
+        ]
+        let reflectedRuntimeValues = runtimeValues.map { String(reflecting: $0) }.joined()
+        for canary in canaries {
+            suite.check(
+                reflectedRuntimeValues.contains(canary),
+                "privacy canary is present at its runtime-only boundary: \(canary)"
+            )
+        }
+
+        let store = AppServerProjectionStore()
+        _ = await store.apply(.connectionActivated(
+            identity: connection,
+            source: .managedDaemon,
+            featureSupport: .init(features: [.monitor])
+        ))
+        let checkpoint = try JSONEncoder().encode(await store.checkpoint(at: at(8)))
+        let checkpointText = String(decoding: checkpoint, as: UTF8.self)
+        for canary in canaries {
+            suite.check(
+                !checkpointText.contains(canary),
+                "checkpoint excludes sensitive runtime canary: \(canary)"
+            )
+        }
     }
 
     private static func decodeItem(

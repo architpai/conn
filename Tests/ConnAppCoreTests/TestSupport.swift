@@ -19,6 +19,11 @@ struct TestSuite {
         assertions += 1
         failures.append("\(context): \(error)")
     }
+
+    mutating func merge(_ other: TestSuite) {
+        assertions += other.assertions
+        failures.append(contentsOf: other.failures)
+    }
 }
 
 enum Phase3TestScaffolding {

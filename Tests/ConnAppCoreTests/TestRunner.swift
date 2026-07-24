@@ -2,47 +2,135 @@ import Foundation
 
 @main
 private enum ConnAppCoreTestRunner {
+    private enum V02Owner: String, CaseIterable {
+        case codexAdapter = "ConnCodexAdapter"
+        case appCore = "ConnAppCore"
+        case ui = "ConnUI"
+        case composition = "ConnApp"
+    }
+
     static func main() async {
         var suite = TestSuite()
-        do {
-            try await Phase3AppCoreTestCases.run(into: &suite)
-            Phase4ShellPolicyTestCases.run(into: &suite)
-            try await Phase7PersistenceMigrationTestCases.run(into: &suite)
-            try await Phase8StructuredMonitoringTestCases.run(into: &suite)
-            try await Phase8RuntimePolicyTestCases.run(into: &suite)
-            Phase8ShellRegressionTestCases.run(into: &suite)
-            try await Phase8PresentationPayloadTestCases.run(into: &suite)
-            try await Phase85AdapterTestCases.run(into: &suite)
-            await Phase85ProjectPresentationTestCases.run(into: &suite)
-            try await Phase85RuntimeRecoveryTestCases.run(into: &suite)
-            try await Phase87ProjectionPrivacyTestCases.run(into: &suite)
-            await Phase87PresentationTestCases.run(into: &suite)
-            Phase87ShellTestCases.run(into: &suite)
-            try Phase88DurabilityTestCases.run(into: &suite)
-            try await Phase9ThreadControlTestCases.run(into: &suite)
-            try await Phase9ThreadControlRuntimeTestCases.run(into: &suite)
-            await Phase92OutcomeReviewTestCases.run(into: &suite)
-            try Phase10SharedDesktopModeTestCases.run(into: &suite)
-            await Phase10SharedDesktopDiagnosticsTestCases.run(into: &suite)
-            await Phase10SharedDesktopSetupTestCases.run(into: &suite)
-            try await Phase10SharedDesktopRuntimeTestCases.run(into: &suite)
-            try await Phase11HookVisibilityTestCases.run(into: &suite)
-            try Phase11LegacyHookRetirementTestCases.run(into: &suite)
-            await Phase11LegacyPluginRetirementTestCases.run(into: &suite)
-            Phase115UIOverhaulTestCases.run(into: &suite)
-            Phase115CompactShelfMotionTestCases.run(into: &suite)
-            await Phase115NotificationPolicyTestCases.run(into: &suite)
-            await Phase115ThreadPickerPolicyTestCases.run(into: &suite)
-        } catch {
-            suite.recordUnexpected(error, context: "unexpected top-level app-core test error")
+        var ownerAssertions = Dictionary(
+            uniqueKeysWithValues: V02Owner.allCases.map { ($0, 0) }
+        )
+
+        await runCase("Phase3AppCore", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            try await Phase3AppCoreTestCases.run(into: &$0)
+        }
+        await runCase("Phase4ShellPolicy", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            Phase4ShellPolicyTestCases.run(into: &$0)
+        }
+        await runCase("Phase7PersistenceMigration", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            try await Phase7PersistenceMigrationTestCases.run(into: &$0)
+        }
+        await runCase("Phase8StructuredMonitoring", owner: .codexAdapter, into: &suite, totals: &ownerAssertions) {
+            try await Phase8StructuredMonitoringTestCases.run(into: &$0)
+        }
+        await runCase("Phase8RuntimePolicy", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            try await Phase8RuntimePolicyTestCases.run(into: &$0)
+        }
+        await runCase("Phase8ShellRegression", owner: .ui, into: &suite, totals: &ownerAssertions) {
+            Phase8ShellRegressionTestCases.run(into: &$0)
+        }
+        await runCase("Phase8PresentationPayload", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            try await Phase8PresentationPayloadTestCases.run(into: &$0)
+        }
+        await runCase("Phase85Adapter", owner: .codexAdapter, into: &suite, totals: &ownerAssertions) {
+            try await Phase85AdapterTestCases.run(into: &$0)
+        }
+        await runCase("Phase85ProjectPresentation", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            await Phase85ProjectPresentationTestCases.run(into: &$0)
+        }
+        await runCase("Phase85RuntimeRecovery", owner: .codexAdapter, into: &suite, totals: &ownerAssertions) {
+            try await Phase85RuntimeRecoveryTestCases.run(into: &$0)
+        }
+        await runCase("Phase87ProjectionPrivacy", owner: .codexAdapter, into: &suite, totals: &ownerAssertions) {
+            try await Phase87ProjectionPrivacyTestCases.run(into: &$0)
+        }
+        await runCase("Phase87Presentation", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            await Phase87PresentationTestCases.run(into: &$0)
+        }
+        await runCase("Phase87Shell", owner: .ui, into: &suite, totals: &ownerAssertions) {
+            Phase87ShellTestCases.run(into: &$0)
+        }
+        await runCase("Phase88Durability", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            try Phase88DurabilityTestCases.run(into: &$0)
+        }
+        await runCase("Phase9ThreadControl", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            try await Phase9ThreadControlTestCases.run(into: &$0)
+        }
+        await runCase("Phase9ThreadControlRuntime", owner: .codexAdapter, into: &suite, totals: &ownerAssertions) {
+            try await Phase9ThreadControlRuntimeTestCases.run(into: &$0)
+        }
+        await runCase("Phase92OutcomeReview", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            await Phase92OutcomeReviewTestCases.run(into: &$0)
+        }
+        await runCase("Phase10SharedDesktopMode", owner: .codexAdapter, into: &suite, totals: &ownerAssertions) {
+            try Phase10SharedDesktopModeTestCases.run(into: &$0)
+        }
+        await runCase("Phase10SharedDesktopDiagnostics", owner: .codexAdapter, into: &suite, totals: &ownerAssertions) {
+            await Phase10SharedDesktopDiagnosticsTestCases.run(into: &$0)
+        }
+        await runCase("Phase10SharedDesktopSetup", owner: .codexAdapter, into: &suite, totals: &ownerAssertions) {
+            await Phase10SharedDesktopSetupTestCases.run(into: &$0)
+        }
+        await runCase("Phase10SharedDesktopRuntime", owner: .codexAdapter, into: &suite, totals: &ownerAssertions) {
+            try await Phase10SharedDesktopRuntimeTestCases.run(into: &$0)
+        }
+        await runCase("Phase11HookVisibility", owner: .codexAdapter, into: &suite, totals: &ownerAssertions) {
+            try await Phase11HookVisibilityTestCases.run(into: &$0)
+        }
+        await runCase("Phase11LegacyHookRetirement", owner: .composition, into: &suite, totals: &ownerAssertions) {
+            try Phase11LegacyHookRetirementTestCases.run(into: &$0)
+        }
+        await runCase("Phase11LegacyPluginRetirement", owner: .codexAdapter, into: &suite, totals: &ownerAssertions) {
+            await Phase11LegacyPluginRetirementTestCases.run(into: &$0)
+        }
+        await runCase("Phase115UIOverhaul", owner: .ui, into: &suite, totals: &ownerAssertions) {
+            Phase115UIOverhaulTestCases.run(into: &$0)
+        }
+        await runCase("Phase115CompactShelfMotion", owner: .ui, into: &suite, totals: &ownerAssertions) {
+            Phase115CompactShelfMotionTestCases.run(into: &$0)
+        }
+        await runCase("Phase115NotificationPolicy", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            await Phase115NotificationPolicyTestCases.run(into: &$0)
+        }
+        await runCase("Phase115ThreadPickerPolicy", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            await Phase115ThreadPickerPolicyTestCases.run(into: &$0)
         }
 
         if suite.failures.isEmpty {
             print("PASS: \(suite.assertions) assertions")
+            for owner in V02Owner.allCases {
+                print("V0.2 OWNER: \(owner.rawValue) \(ownerAssertions[owner, default: 0]) assertions")
+            }
             Foundation.exit(EXIT_SUCCESS)
         }
         fputs("FAIL: \(suite.failures.count) of \(suite.assertions) assertions failed\n", stderr)
         suite.failures.forEach { fputs("- \($0)\n", stderr) }
         Foundation.exit(EXIT_FAILURE)
+    }
+
+    @MainActor
+    private static func runCase(
+        _ name: String,
+        owner: V02Owner,
+        into suite: inout TestSuite,
+        totals: inout [V02Owner: Int],
+        operation: (inout TestSuite) async throws -> Void
+    ) async {
+        var testCaseSuite = TestSuite()
+        do {
+            try await operation(&testCaseSuite)
+        } catch {
+            testCaseSuite.recordUnexpected(error, context: "unexpected \(name) test error")
+        }
+        suite.merge(testCaseSuite)
+        totals[owner, default: 0] += testCaseSuite.assertions
+        print(
+            "V0.2 CASE: \(owner.rawValue) \(name) "
+                + "\(testCaseSuite.assertions) assertions"
+        )
     }
 }
