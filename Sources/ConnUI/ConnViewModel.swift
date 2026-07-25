@@ -47,11 +47,14 @@ public final class ConnViewModel: ObservableObject {
     public var onCollapse: (() -> Void)?
     public var onHidePresentation: (() -> Void)?
     public var onSelectDisplay: ((UInt32) -> Void)?
+    public var onCompactNotificationVisibilityChanged: (() -> Void)?
 
     private let coordinator: ConnIntegrationCoordinator
     private let harnessAssets: [HarnessID: String]
     private let openHarness: @Sendable (ConnSessionID) async -> Bool
     private var stateTask: Task<Void, Never>?
+    private let compactNotificationLifetime =
+        ConnCompactNotificationLifetimeController()
     private var notificationLedger = ConnUserFacingNotificationLedger()
     private var outcomeLedger: ConnOutcomeReviewLedger
     private let outcomeStore: ConnOutcomeReviewPreferenceStore
@@ -97,7 +100,7 @@ public final class ConnViewModel: ObservableObject {
     public var attentionCount: Int { presentation?.attentionCount ?? 0 }
     public var isExpanded: Bool { surfaceState == .expanded }
     public var compactShelfPreferredHeight: CGFloat {
-        compactNotificationBatch == nil ? 34 : 92
+        compactNotificationBatch == nil ? 44 : 92
     }
 
     public var pickerResult: SessionPickerResult {
@@ -293,7 +296,10 @@ public final class ConnViewModel: ObservableObject {
     }
 
     public func dismissCompactNotification() {
+        compactNotificationLifetime.dismiss()
+        guard compactNotificationBatch != nil else { return }
         compactNotificationBatch = nil
+        onCompactNotificationVisibilityChanged?()
     }
 
     public func persistPreferences(defaults: UserDefaults = .standard) {
@@ -318,11 +324,29 @@ public final class ConnViewModel: ObservableObject {
         }
         let notifications = notificationLedger.collect(from: value)
         if let batch = ConnUserFacingNotificationPolicy.batch(notifications) {
-            compactNotificationBatch = batch
+            presentCompactNotification(batch)
         }
         integrationError = value.integrations.isEmpty
             ? "No Integration is installed"
             : nil
+    }
+
+    private func presentCompactNotification(
+        _ batch: ConnUserFacingNotificationBatch
+    ) {
+        guard compactNotificationLifetime.present(
+            id: batch.id,
+            duration: batch.duration,
+            onExpire: { [weak self] id in
+                guard let self, self.compactNotificationBatch?.id == id else {
+                    return
+                }
+                self.compactNotificationBatch = nil
+                self.onCompactNotificationVisibilityChanged?()
+            }
+        ) else { return }
+        compactNotificationBatch = batch
+        onCompactNotificationVisibilityChanged?()
     }
 
     private func perform(

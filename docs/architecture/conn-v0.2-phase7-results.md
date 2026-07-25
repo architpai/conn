@@ -2,7 +2,7 @@
 
 Status: Offline gate complete; live acceptance and public release pending.
 
-The local candidate is Conn `0.2.0` build `4`, a continued Alpha release.
+The local candidate is Conn `0.2.0` build `5`, a continued Alpha release.
 Codex is the only supported Harness. Claude Code, Pi, OpenCode, and other
 Harness adapters are not included.
 
@@ -12,7 +12,7 @@ The following pass on 2026-07-25:
 
 - `swift build`;
 - all four required owner executables: 1,469 Codex-adapter assertions, 67
-  Domain assertions, 217 AppCore assertions, and 196 UI assertions;
+  Domain assertions, 217 AppCore assertions, and 202 UI assertions;
 - 14 ConnApp migration-edge assertions;
 - provider-boundary and schema-provenance verification;
 - release-inspection self-tests;
@@ -25,7 +25,7 @@ The built candidate is:
 ```text
 .build/conn-app/Conn.app
 CFBundleShortVersionString = 0.2.0
-CFBundleVersion = 4
+CFBundleVersion = 5
 signature = local ad-hoc
 notarization = not claimed
 ```
@@ -49,6 +49,17 @@ policy. The live built-in display now produces a top-origin window bound of
 Diagnosis now changes to `Diagnose again`, updates a `Checked` timestamp, shows
 the bounded Desktop/bundled-Codex/App Server versions, and explains
 candidate-only qualification.
+
+Build 5 restores the compact activity shelf as one clipped surface continuous
+with the Conn bar. It removes the obsolete eight-point inter-surface height,
+restores the countdown ring, and gives each notification ID one cancellable
+five-to-ten-second lifetime. Expiry and manual dismissal both collapse the
+panel back to compact-bar height; repeated projection refreshes cannot restart
+the same notification timer.
+The packaged build was then exercised on the built-in MacBook display: the
+notification appeared as one continuous surface with a visible countdown ring,
+disappeared after its bounded lifetime, and left a `350 × 44` compact window at
+top-origin `Y = 0`.
 
 ## Required manual acceptance
 

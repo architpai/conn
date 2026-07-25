@@ -19,14 +19,12 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
 
     public var body: some View {
         ZStack(alignment: .top) {
-            chrome
             if model.surfaceState == .expanded {
+                chrome
                 expandedContent
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.985)))
-            } else if let batch = model.compactNotificationBatch {
-                compactNotification(batch)
-                    .offset(y: 42)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                compactSurface
             }
         }
         .frame(
@@ -44,6 +42,39 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
     }
 
     private var chrome: some View {
+        chromeContent
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(.white.opacity(0.09))
+            }
+            .padding(.horizontal, 6)
+            .padding(.top, 2)
+    }
+
+    private var compactSurface: some View {
+        let hasNotification = model.compactNotificationBatch != nil
+        let shape = RoundedRectangle(
+            cornerRadius: hasNotification ? 16 : 20,
+            style: .continuous
+        )
+        return VStack(spacing: 0) {
+            chromeContent
+            if let batch = model.compactNotificationBatch {
+                compactNotification(batch)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .frame(width: 338)
+        .background(.ultraThinMaterial)
+        .clipShape(shape)
+        .overlay {
+            shape.strokeBorder(.white.opacity(0.09))
+        }
+        .padding(.horizontal, 6)
+        .padding(.top, 2)
+    }
+
+    private var chromeContent: some View {
         HStack(spacing: 10) {
             Button {
                 model.onToggleExpansion?()
@@ -106,12 +137,6 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 40)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay {
-            Capsule().strokeBorder(.white.opacity(0.09))
-        }
-        .padding(.horizontal, 6)
-        .padding(.top, 2)
     }
 
     private var expandedContent: some View {
@@ -518,22 +543,41 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
     private func compactNotification(
         _ batch: ConnUserFacingNotificationBatch
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(batch.notifications) { notification in
-                HStack(alignment: .top, spacing: 8) {
-                    Text(notification.sessionTitle)
-                        .font(.system(size: 10, weight: .bold))
-                        .lineLimit(1)
-                    Text(notification.text)
-                        .font(.system(size: 11))
-                        .lineLimit(2)
-                    Spacer(minLength: 0)
+        HStack(spacing: 10) {
+            Image(
+                systemName: batch.notifications.last?.isFinal == true
+                    ? "checkmark.circle.fill"
+                    : "waveform.path"
+            )
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(
+                batch.notifications.last?.isFinal == true ? .green : .mint
+            )
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(batch.notifications) { notification in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(notification.sessionTitle)
+                            .font(.system(size: 10, weight: .bold))
+                            .lineLimit(1)
+                        Text(notification.text)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
+            Spacer(minLength: 0)
+            CompactNotificationCountdownRing(
+                duration: batch.duration,
+                reduceMotion: reduceMotion
+            )
+            .id(batch.id)
         }
-        .padding(10)
-        .frame(width: 330)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13))
+        .padding(.horizontal, 12)
+        .frame(height: 52)
+        .contentShape(Rectangle())
         .onTapGesture {
             if let id = batch.notifications.last?.sessionID {
                 model.selectSession(id)
@@ -618,6 +662,35 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
         case .image: "photo"
         case .compaction: "arrow.down.right.and.arrow.up.left"
         case .unknown: "circle.dotted"
+        }
+    }
+}
+
+private struct CompactNotificationCountdownRing: View {
+    let duration: TimeInterval
+    let reduceMotion: Bool
+    @State private var progress = 1.0
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(.white.opacity(0.14), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: reduceMotion ? 1 : progress)
+                .stroke(
+                    .mint,
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: 17, height: 17)
+        .accessibilityHidden(true)
+        .onAppear {
+            progress = 1
+            guard !reduceMotion else { return }
+            withAnimation(.linear(duration: max(duration, 0.1))) {
+                progress = 0
+            }
         }
     }
 }

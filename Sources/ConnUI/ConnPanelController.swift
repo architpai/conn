@@ -28,7 +28,7 @@ package enum ConnPanelFramePolicy {
         let width: CGFloat = expanded ? min(840, anchorFrame.width - 32) : 350
         let height: CGFloat = expanded
             ? min(620, visibleFrame.height - 44)
-            : max(44, compactShelfPreferredHeight + 8)
+            : max(44, compactShelfPreferredHeight)
         let topEdge = placement == .physicalNotch
             ? displayFrame.maxY
             : visibleFrame.maxY - 8
@@ -89,6 +89,9 @@ public final class ConnPanelController<IntegrationSettingsContent: View> {
         model.onHidePresentation = { [weak self] in self?.panel.orderOut(nil) }
         model.onSelectDisplay = { [weak self] displayID in
             self?.selectDisplay(displayID)
+        }
+        model.onCompactNotificationVisibilityChanged = { [weak self] in
+            self?.applyGeometry(animated: false)
         }
         installEventMonitors()
         refreshDisplays()
