@@ -58,6 +58,41 @@ enum V02CandidateRegressionTestCases {
             92,
             "the integrated notification shelf needs no inter-surface height allowance"
         )
+        suite.checkEqual(
+            compactNotification.frame.width,
+            404,
+            "the physical-notch compact surface preserves safe side wings"
+        )
+        let notchHeader = ConnCompactHeaderLayoutPolicy.presentation(
+            surface: .compact,
+            placement: .physicalNotch
+        )
+        suite.check(
+            notchHeader.showsProductName,
+            "the Conn wordmark remains visible in the physical-notch left wing"
+        )
+        suite.check(
+            !notchHeader.showsIntegrationStatus,
+            "compact integration status does not render behind the physical notch"
+        )
+        suite.checkEqual(
+            notchHeader.minimumCenterGap,
+            184,
+            "the compact header reserves the measured physical-notch center"
+        )
+        let externalHeader = ConnCompactHeaderLayoutPolicy.presentation(
+            surface: .compact,
+            placement: .externalCapsule
+        )
+        suite.check(
+            externalHeader.showsIntegrationStatus,
+            "external capsules retain compact Integration status wording"
+        )
+        suite.checkEqual(
+            external.frame.width,
+            350,
+            "external capsules retain their compact width"
+        )
 
         var sleepCount = 0
         var expiredIDs: [String] = []

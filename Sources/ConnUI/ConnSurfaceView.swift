@@ -64,7 +64,11 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .frame(width: 338)
+        .frame(
+            width: ConnCompactHeaderLayoutPolicy.compactContentWidth(
+                placement: model.panelPlacement
+            )
+        )
         .background(.ultraThinMaterial)
         .clipShape(shape)
         .overlay {
@@ -75,7 +79,11 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
     }
 
     private var chromeContent: some View {
-        HStack(spacing: 10) {
+        let presentation = ConnCompactHeaderLayoutPolicy.presentation(
+            surface: model.surfaceState,
+            placement: model.panelPlacement
+        )
+        return HStack(spacing: 10) {
             Button {
                 model.onToggleExpansion?()
             } label: {
@@ -84,29 +92,33 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                         .resizable()
                         .frame(width: 22, height: 22)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
-                    Text("CONN")
-                        .font(.system(size: 11, weight: .black, design: .rounded))
-                        .tracking(1.2)
+                    if presentation.showsProductName {
+                        Text("CONN")
+                            .font(.system(size: 11, weight: .black, design: .rounded))
+                            .tracking(1.2)
+                    }
                 }
             }
             .buttonStyle(.plain)
             .accessibilityLabel(model.isExpanded ? "Collapse Conn" : "Expand Conn")
 
-            if let integration = model.integrations.first {
-                Circle()
-                    .fill(toneColor(integration.tone))
-                    .frame(width: 7, height: 7)
-                    .accessibilityHidden(true)
-                Text(integration.statusLabel)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Connecting")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+            if presentation.showsIntegrationStatus {
+                if let integration = model.integrations.first {
+                    Circle()
+                        .fill(toneColor(integration.tone))
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+                    Text(integration.statusLabel)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Connecting")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
             }
 
-            Spacer(minLength: 8)
+            Spacer(minLength: presentation.minimumCenterGap)
 
             if model.activeCount > 0 {
                 metric("\(model.activeCount)", label: "active Sessions", color: .mint)

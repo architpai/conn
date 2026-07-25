@@ -25,7 +25,11 @@ package enum ConnPanelFramePolicy {
         let anchorFrame = placement == .physicalNotch
             ? displayFrame
             : visibleFrame
-        let width: CGFloat = expanded ? min(840, anchorFrame.width - 32) : 350
+        let width: CGFloat = expanded
+            ? min(840, anchorFrame.width - 32)
+            : ConnCompactHeaderLayoutPolicy.compactPanelWidth(
+                placement: placement
+            )
         let height: CGFloat = expanded
             ? min(620, visibleFrame.height - 44)
             : max(44, compactShelfPreferredHeight)

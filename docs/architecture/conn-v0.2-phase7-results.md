@@ -2,7 +2,7 @@
 
 Status: Offline gate complete; live acceptance and public release pending.
 
-The local candidate is Conn `0.2.0` build `5`, a continued Alpha release.
+The local candidate is Conn `0.2.0` build `6`, a continued Alpha release.
 Codex is the only supported Harness. Claude Code, Pi, OpenCode, and other
 Harness adapters are not included.
 
@@ -12,7 +12,7 @@ The following pass on 2026-07-25:
 
 - `swift build`;
 - all four required owner executables: 1,469 Codex-adapter assertions, 67
-  Domain assertions, 217 AppCore assertions, and 202 UI assertions;
+  Domain assertions, 217 AppCore assertions, and 208 UI assertions;
 - 14 ConnApp migration-edge assertions;
 - provider-boundary and schema-provenance verification;
 - release-inspection self-tests;
@@ -25,7 +25,7 @@ The built candidate is:
 ```text
 .build/conn-app/Conn.app
 CFBundleShortVersionString = 0.2.0
-CFBundleVersion = 5
+CFBundleVersion = 6
 signature = local ad-hoc
 notarization = not claimed
 ```
@@ -60,6 +60,12 @@ The packaged build was then exercised on the built-in MacBook display: the
 notification appeared as one continuous surface with a visible countdown ring,
 disappeared after its bounded lifetime, and left a `350 × 44` compact window at
 top-origin `Y = 0`.
+
+Build 6 restores the physical-notch compact width to 404 points, keeps the
+Conn wordmark inside the safe left wing, omits compact Integration status text
+that would render behind the camera housing, and reserves a tested 184-point
+center gap. External capsules retain their 350-point width and full status
+wording.
 
 ## Required manual acceptance
 

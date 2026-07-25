@@ -34,6 +34,8 @@ Continued alpha release.
 - The disposable v0.1 projection and outcome baseline are intentionally reset.
 - The compact notification shelf is again one integrated notch surface with a
   visible countdown and automatic expiry.
+- The built-in display header now preserves physical-notch safe wings while
+  external displays retain the full compact status wording.
 
 ### Fixed
 
