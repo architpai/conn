@@ -548,6 +548,8 @@ Checkpoint intent: `docs: freeze Conn v0.2 parity contract`
 
 ### Phase 2 — Establish the neutral Domain and Integration port
 
+Evidence: [Conn v0.2 Phase 2 results](conn-v0.2-phase2-results.md).
+
 Tasks:
 
 1. Introduce the neutral identity, projection, and integration vocabulary
