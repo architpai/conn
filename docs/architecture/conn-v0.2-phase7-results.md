@@ -2,7 +2,7 @@
 
 Status: Offline gate complete; live acceptance and public release pending.
 
-The local candidate is Conn `0.2.0` build `8`, a continued Alpha release.
+The local candidate is Conn `0.2.0` build `9`, a continued Alpha release.
 Codex is the only supported Harness. Claude Code, Pi, OpenCode, and other
 Harness adapters are not included.
 
@@ -25,7 +25,7 @@ The built candidate is:
 ```text
 .build/conn-app/Conn.app
 CFBundleShortVersionString = 0.2.0
-CFBundleVersion = 8
+CFBundleVersion = 9
 signature = local ad-hoc
 notarization = not claimed
 ```
@@ -78,6 +78,11 @@ Build 8 restores the full expanded-header collapse target that was lost in the
 Phase 5 view rewrite. A background Button fills unused bar space beneath the
 existing logo, New Session, and Settings controls, so the natural bar-click
 gesture collapses Conn without intercepting those controls.
+
+Build 9 pairs chronological history with newest-tail opening. Expanding Conn or
+switching Sessions creates a Session-scoped transcript viewport whose default
+anchor is the bottom. Ordinary Activity refreshes retain that viewport identity
+so someone reading older history is not forced back to the tail.
 
 ## Required manual acceptance
 

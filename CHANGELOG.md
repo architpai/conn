@@ -40,6 +40,8 @@ Continued alpha release.
   user, reasoning, tool, and assistant Item order inside each Turn.
 - Clicking unused space in the expanded Conn header now collapses the surface
   without stealing clicks from its embedded controls.
+- Chronological Session history now opens at its newest tail and resets to the
+  tail when switching Sessions.
 
 ### Fixed
 

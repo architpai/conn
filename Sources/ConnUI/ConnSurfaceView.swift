@@ -288,6 +288,8 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                     }
                     .padding(16)
                 }
+                .defaultScrollAnchor(.bottom)
+                .id(session.id)
                 Divider().opacity(0.35)
                 composer(session)
             }
