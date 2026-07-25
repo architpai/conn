@@ -21,6 +21,9 @@ private enum ConnAppCoreTestRunner {
         await runCase("Phase4ShellPolicy", owner: .appCore, into: &suite, totals: &ownerAssertions) {
             Phase4ShellPolicyTestCases.run(into: &$0)
         }
+        await runCase("Phase4NeutralAggregation", owner: .appCore, into: &suite, totals: &ownerAssertions) {
+            try await Phase4NeutralAggregationTestCases.run(into: &$0)
+        }
         await runCase("Phase7PersistenceMigration", owner: .appCore, into: &suite, totals: &ownerAssertions) {
             try await Phase7PersistenceMigrationTestCases.run(into: &$0)
         }

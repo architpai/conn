@@ -41,6 +41,39 @@ public struct IntegrationProjection: Equatable, Sendable {
         freshness == .live && authoritativeSessionIDs.contains(sessionID)
     }
 
+    /// Restores bounded presentation-only state without recreating runtime
+    /// generation, capability, Attention, or action authority.
+    public mutating func restore(
+        _ persisted: PersistedIntegrationProjection,
+        bounds: ConnDomainBounds = .default
+    ) -> IntegrationReductionResult {
+        let checkpoint = ConnProjectionCheckpoint(integrations: [persisted])
+        guard (try? checkpoint.validate(bounds: bounds)) != nil else {
+            return .rejected(.invalidCheckpoint)
+        }
+        descriptor = persisted.descriptor
+        generation = nil
+        freshness = .rehydrated
+        inventoryAuthority = persisted.inventoryAuthority
+        capabilities = .init(canMonitor: false)
+        throughSequence = 0
+        sessionsByID = Dictionary(
+            uniqueKeysWithValues: persisted.sessions.map { ($0.id, $0) }
+        )
+        attentionByID = [:]
+        authoritativeSessionIDs = []
+        return .restored
+    }
+
+    public mutating func markStale() {
+        generation = nil
+        freshness = .stale
+        capabilities = .init(canMonitor: false)
+        throughSequence = 0
+        attentionByID = [:]
+        authoritativeSessionIDs = []
+    }
+
     public mutating func qualify(
         with snapshot: IntegrationSnapshot,
         bounds: ConnDomainBounds = .default
@@ -285,9 +318,11 @@ public enum IntegrationReductionRejection: Equatable, Sendable {
     case invalidRunReference
     case duplicateIdentity
     case boundsExceeded
+    case invalidCheckpoint
 }
 
 public enum IntegrationReductionResult: Equatable, Sendable {
+    case restored
     case qualified
     case applied
     case ignoredDuplicate
@@ -320,20 +355,27 @@ public struct PersistedIntegrationProjection: Codable, Equatable, Sendable {
 }
 
 public struct ConnProjectionCheckpoint: Codable, Equatable, Sendable {
+    public static let formatDiscriminator = "conn-neutral-projection"
     public static let currentSchemaVersion = 1
 
+    public let format: String
     public let schemaVersion: Int
     public let integrations: [PersistedIntegrationProjection]
 
     public init(
+        format: String = formatDiscriminator,
         schemaVersion: Int = currentSchemaVersion,
         integrations: [PersistedIntegrationProjection]
     ) {
+        self.format = format
         self.schemaVersion = schemaVersion
         self.integrations = integrations
     }
 
     public func validate(bounds: ConnDomainBounds = .default) throws {
+        guard format == Self.formatDiscriminator else {
+            throw ConnProjectionCheckpointError.unsupportedFormat(format)
+        }
         guard schemaVersion == Self.currentSchemaVersion else {
             throw ConnProjectionCheckpointError.unsupportedSchemaVersion(schemaVersion)
         }
@@ -380,6 +422,7 @@ public struct ConnProjectionCheckpoint: Codable, Equatable, Sendable {
 }
 
 public enum ConnProjectionCheckpointError: Error, Equatable, Sendable {
+    case unsupportedFormat(String)
     case unsupportedSchemaVersion(Int)
     case duplicateIntegration(IntegrationID)
     case duplicateSession(ConnSessionID)

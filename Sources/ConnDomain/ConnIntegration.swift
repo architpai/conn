@@ -108,4 +108,9 @@ public protocol ConnIntegration: Sendable {
     var descriptor: IntegrationDescriptor { get }
     func establishFeed() async throws(ConnIntegrationError) -> ConnIntegrationFeed
     func perform(_ action: ConnAction) async -> ConnActionOutcome
+    func disconnect() async
+}
+
+public extension ConnIntegration {
+    func disconnect() async {}
 }

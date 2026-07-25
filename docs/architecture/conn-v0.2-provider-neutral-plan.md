@@ -622,6 +622,8 @@ Checkpoint intent: `refactor: implement Codex integration adapter`
 
 ### Phase 4 — Build neutral AppCore aggregation and persistence
 
+Evidence: [Conn v0.2 Phase 4 results](conn-v0.2-phase4-results.md).
+
 Tasks:
 
 1. Aggregate a collection of Integrations and isolate connection, failure,

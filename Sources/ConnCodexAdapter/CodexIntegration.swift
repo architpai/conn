@@ -213,6 +213,14 @@ public actor CodexIntegration: ConnIntegration {
         }
     }
 
+    public func disconnect() async {
+        await feedBootstrap?.invalidate()
+        feedBootstrap = nil
+        runtimeTask?.cancel()
+        runtimeTask = nil
+        runtime = nil
+    }
+
     private func execute(
         _ intent: AppServerControlIntent,
         action: ConnAction,

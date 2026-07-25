@@ -8,6 +8,7 @@ private enum ConnDomainTestRunner {
         do {
             try await Phase7AppServerProjectionTestCases.run(into: &suite)
             try await Phase2ConnIntegrationTestCases.run(into: &suite)
+            try Phase4CheckpointRestoreTestCases.run(into: &suite)
         } catch {
             suite.recordUnexpected(error, context: "unexpected top-level domain test error")
         }
