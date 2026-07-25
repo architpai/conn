@@ -60,7 +60,7 @@ function ProductSurface({ compact = false }: { compact?: boolean }) {
             <p>I’ve finished the landing page structure and I’m running the responsive checks now.</p>
             <div className="tool-row"><span>⌁</span><b>Building production bundle</b><em>running</em></div>
           </div>
-          <div className="composer-demo"><span>Steer this thread</span><b>↑</b></div>
+          <div className="composer-demo"><span>Steer this Session</span><b>↑</b></div>
         </div>
       </div>
 
@@ -116,7 +116,7 @@ export default function Home() {
         <div className="hero-glow" />
         <div className="hero-copy">
           <h1 className="enter" style={{ "--delay": "160ms" } as React.CSSProperties}>Leave the work.<br /><em>Keep the conn.</em></h1>
-          <p className="hero-sub enter" style={{ "--delay": "280ms" } as React.CSSProperties}>A notch-native Mac companion that keeps your Codex threads visible, actionable, and out of your way.</p>
+          <p className="hero-sub enter" style={{ "--delay": "280ms" } as React.CSSProperties}>A notch-native Mac companion that keeps your Codex Sessions visible, actionable, and out of your way.</p>
         </div>
         <div className="hero-product enter" style={{ "--delay": "260ms" } as React.CSSProperties}>
           <ProductSurface compact />
@@ -176,7 +176,7 @@ export default function Home() {
         <div className="principle-list" data-reveal>
           <div><span>01</span><h3>Open source.</h3><p>Inspect it, adapt it, and help shape what Conn becomes.</p></div>
           <div><span>02</span><h3>No telemetry.</h3><p>Your supervision stays local. Conn does not report how you work.</p></div>
-          <div><span>03</span><h3>Not another harness.</h3><p>Codex owns the threads and runtime. Conn stays a focused companion.</p></div>
+          <div><span>03</span><h3>Not another harness.</h3><p>Codex owns the Sessions and runtime. Conn stays a focused companion.</p></div>
         </div>
       </section>
 

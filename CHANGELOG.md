@@ -11,6 +11,34 @@ public alpha releases.
 - Broader Codex App Server version compatibility.
 - Continued accessibility, interaction, and release-hardening work.
 
+## [0.2.0] - 2026-07-25
+
+Continued alpha release.
+
+### Added
+
+- An internal provider-neutral Integration API covering Harnesses,
+  Integrations, Sessions, Runs, Activities, Attention Requests, capabilities,
+  action authority, and ordered updates.
+- Multi-Integration aggregation and isolation contract tests using the real
+  Codex-shaped fixture and a synthetic monitor-only Integration.
+- Provider-neutral `ConnUI`, a typed Integration-settings composition slot,
+  clean v0.2 projection persistence, and explicit Harness attribution.
+- Exact-identity confirmation UI for removing the retired Sidequest plugin.
+
+### Changed
+
+- Generic product language now uses Sessions rather than Threads.
+- App Server protocol, projection, control, and Shared Desktop types are
+  confined to `ConnCodexAdapter`; Domain, AppCore, and UI no longer import it.
+- The disposable v0.1 projection and outcome baseline are intentionally reset.
+
+### Known limitations
+
+- Codex is the only supported Harness in v0.2. Claude Code, Pi, OpenCode, and
+  other adapters are foundation work only, not product claims.
+- This remains alpha software. The local ad-hoc artifact is not notarized.
+
 ## [0.1.1] - 2026-07-22
 
 ### Fixed
@@ -52,6 +80,7 @@ Initial alpha release.
 - Ad-hoc artifacts are for local testing only; public distribution requires a
   Developer ID signature and notarization.
 
-[Unreleased]: https://github.com/architpai/conn/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/architpai/conn/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/architpai/conn/releases/tag/v0.2.0
 [0.1.1]: https://github.com/architpai/conn/releases/tag/v0.1.1
 [0.1.0]: https://github.com/architpai/conn/releases/tag/v0.1.0

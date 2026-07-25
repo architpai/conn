@@ -4,28 +4,29 @@
 
 [Visit the Conn website](https://conn-umber.vercel.app/) · [Download the latest release](https://github.com/architpai/conn/releases/latest)
 
-Conn is a native macOS notch companion for supervising Codex while you work in
-other apps. It shows connected thread activity, surfaces supported permission
-and question requests, and lets you steer, follow up, or stop a turn without
-taking ownership of the Codex process.
+Conn is a native macOS notch companion for supervising AI harness Sessions
+while you work in other apps. It shows connected activity, surfaces supported
+permission and question requests, and lets you steer, follow up, or interrupt
+a Run without taking ownership of the harness process.
 
 > [!IMPORTANT]
-> Conn 0.1.1 is an alpha preview for Apple Silicon Macs running macOS 15 or
-> later. It currently supports Codex CLI/App Server versions `0.144.5` and
-> `0.144.6` exactly. Shared Desktop Mode is experimental and off by default.
+> Conn 0.2.0 remains an alpha preview for Apple Silicon Macs running macOS 15
+> or later. Codex is the only supported harness in v0.2, using CLI/App Server
+> versions `0.144.5` and `0.144.6` exactly. Shared Desktop Mode remains
+> experimental and off by default.
 
 Conn is an independent open-source project and is not an official OpenAI
 product.
 
 ## What Conn does
 
-- Keeps running, idle, completed, failed, and attention-needing threads visible
+- Keeps working, idle, completed, failed, and attention-needing Sessions visible
   in a compact top-center surface.
-- Expands into a focused workspace for switching threads and reading recent
+- Expands into a focused workspace for switching Sessions and reading recent
   structured output.
 - Supports capability-gated approval, question, follow-up, steer, and stop
   actions through Codex App Server.
-- Rehydrates state after reconnecting without taking ownership of Codex threads
+- Rehydrates state after reconnecting without taking ownership of Codex Sessions
   or their lifecycle.
 - Offers an optional Labs flow for qualifying Codex Desktop and Conn as clients
   of the same managed daemon.
@@ -57,9 +58,9 @@ instructions.
    installed.
 2. Install and open Conn using [INSTALL.md](INSTALL.md).
 3. Leave **Shared Desktop Mode** off; Managed Daemon Mode is the default.
-4. Start or resume a harmless Codex thread through the managed daemon.
-5. Confirm the thread appears in Conn, expand it, and inspect its activity.
-6. Send a benign follow-up or start a new chat from Conn, then confirm the turn
+4. Start or resume a harmless Codex Session through the managed daemon.
+5. Confirm the Session appears in Conn, expand it, and inspect its activity.
+6. Send a benign follow-up or create an ephemeral Session from Conn, then confirm the Run
    continues if Conn is closed and reopened.
 
 Conn fails closed when the App Server version is unsupported. Some approval and
@@ -79,12 +80,15 @@ The proxy is a disposable transport helper. Codex owns the daemon, threads, and
 turns; quitting Conn only disconnects its client. Conn uses structured App
 Server messages and does not scrape transcript files or install hooks.
 
-The implementation is split into:
+The provider-neutral implementation is split into:
 
-- `ConnDomain` for typed thread and turn projection.
-- `ConnCodexAdapter` for version-gated App Server transport and protocol.
-- `ConnAppCore` for monitoring, persistence, presentation, and controls.
-- `ConnApp` for the AppKit and SwiftUI notch surface.
+- `ConnDomain` for Harness, Integration, Session, Run, Activity, Attention, and
+  action semantics.
+- `ConnAppCore` for Integration aggregation, persistence, presentation, and
+  policy.
+- `ConnCodexAdapter` for the version-gated Codex App Server implementation.
+- `ConnUI` for the provider-neutral AppKit and SwiftUI notch surface.
+- `ConnApp` for Codex-only composition and migration controls in v0.2.
 
 Read the [architecture decisions](docs/adr),
 [domain model](docs/architecture/domain-model.md), and
@@ -111,6 +115,7 @@ cd conn
 swift run conn-codex-adapter-tests
 swift run conn-domain-tests
 swift run conn-app-core-tests
+swift run conn-ui-tests
 ./scripts/test-inspect-release.sh
 ```
 
@@ -135,9 +140,11 @@ checks.
 
 ## Project status and roadmap
 
-Version 0.1.1 is a narrow alpha. Near-term priorities are Developer ID signing
-and notarization, a broader and less brittle Codex compatibility strategy,
-universal macOS builds, UI refinement through daily use, and voice dictation.
+Version 0.2.0 is a continued alpha. It introduces an internal provider-neutral
+Integration API while shipping only the real Codex Integration; Claude Code,
+Pi, OpenCode, and other harnesses are not supported yet. Near-term priorities
+remain Developer ID signing and notarization, broader adapter qualification,
+universal macOS builds, and UI refinement through daily use.
 See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Contributing and security

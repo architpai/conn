@@ -743,6 +743,9 @@ Checkpoint intent: `refactor: remove App Server-shaped core`
 
 ### Phase 7 — Accept and release v0.2.0 Alpha
 
+Candidate evidence:
+[Conn v0.2 Phase 7 results](conn-v0.2-phase7-results.md).
+
 Offline gate:
 
 ```sh
