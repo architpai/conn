@@ -1,9 +1,10 @@
 import AppKit
-import ConnCodexAdapter
 import Darwin
 import Foundation
 import ConnAppCore
+import ConnCodexAdapter
 import ConnDomain
+import ConnUI
 
 @main
 @MainActor
@@ -26,10 +27,8 @@ private enum ConnApplication {
             )
             return
         }
-        // The stable lock closes current-version launch races. This post-lock
-        // bundle check also hands off to an already-running legacy build that
-        // predates the Application Support lock without reopening that race.
         guard !activateExistingInstance() else { return }
+
         let application = NSApplication.shared
         let delegate = ConnAppDelegate(singleInstanceClaim: singleInstanceClaim)
         application.delegate = delegate
@@ -46,7 +45,7 @@ private enum ConnApplication {
         return true
     }
 
-    private static func showStartupError(_ detail: String) {
+    static func showStartupError(_ detail: String) {
         let application = NSApplication.shared
         application.setActivationPolicy(.accessory)
         NSRunningApplication.current.activate(options: [.activateAllWindows])
@@ -62,25 +61,13 @@ private enum ConnApplication {
 @MainActor
 private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
     private let singleInstanceClaim: ConnSingleInstanceClaim
-    private let viewModel = ConnViewModel()
-    private var panelController: ConnPanelController?
+    private var coordinator: ConnIntegrationCoordinator?
+    private var viewModel: ConnViewModel?
+    private var settingsModel: CodexIntegrationSettingsModel?
+    private var panelController:
+        ConnPanelController<CodexIntegrationSettingsView>?
     private var globalHotKey: GlobalHotKey?
-    private var appServerTask: Task<Void, Never>?
-    private var controlTask: Task<Void, Never>?
-    private var newThreadTask: Task<Void, Never>?
-    private var newThreadModelTask: Task<Void, Never>?
-    private var newThreadHydrationTask: Task<Void, Never>?
-    private var legacyPluginRetirementTask: Task<Void, Never>?
-    private let sharedDesktopDiagnostics = SharedDesktopDiagnosticsCoordinator()
-    private let sharedDesktopSetup = SharedDesktopSetupCoordinator()
-    private var sharedDesktopDiagnosticsTask: Task<Void, Never>?
-    private var sharedDesktopSetupTask: Task<Void, Never>?
-    private var sharedDesktopDiagnosticsRefreshTask: Task<Void, Never>?
-    private var sharedDesktopProofTask: Task<Void, Never>?
-    private var appServerRuntime: AppServerMonitoringRuntime?
-    private var appServerRuntimeGeneration: UUID?
     private var observers: [NSObjectProtocol] = []
-    private var systemAvailability = ShellSystemAvailability()
 
     init(singleInstanceClaim: ConnSingleInstanceClaim) {
         self.singleInstanceClaim = singleInstanceClaim
@@ -89,334 +76,161 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        let controller = ConnPanelController(model: viewModel)
-        panelController = controller
-        viewModel.onDiagnoseSharedDesktop = { [weak self] labsEnabled, generation in
-            self?.diagnoseSharedDesktop(
-                labsEnabled: labsEnabled,
-                generation: generation
+
+        do {
+            let store = try ConnProjectionCheckpointFileStore.userDefault()
+            // The old projection is disposable migration evidence. It never
+            // enters the neutral decoder or v0.2 outcome baseline.
+            _ = AppServerDomainCheckpointFileStore.quarantineUserDefaultCache()
+            let codex = CodexIntegration(
+                configuration: .init(
+                    pageSize: 100,
+                    maximumBulkQualifiedThreads: 0,
+                    inventoryRequestTimeout: .seconds(30),
+                    qualificationTimeout: .seconds(30),
+                    bulkQualificationRequiresActiveStatus: true,
+                    activeDiscoveryInterval: 2,
+                    activeDiscoveryThreadLimit: 20,
+                    approvalRoutingPolicy: .allSubscribedConnectionsQualified
+                ),
+                legacyHookRetirement: Self.retireLegacyHooks
             )
-        }
-        viewModel.onSetUpSharedDesktop = { [weak self] in
-            guard let self else { return }
-            sharedDesktopSetupTask?.cancel()
-            sharedDesktopSetupTask = Task { [weak self] in
-                guard let self else { return }
-                let result = await sharedDesktopSetup.setUp()
-                viewModel.finishSharedDesktopSetup(result)
+            let coordinator = try ConnIntegrationCoordinator(
+                integrations: [codex],
+                checkpointStore: store
+            )
+            let viewModel = ConnViewModel(
+                coordinator: coordinator,
+                openHarness: Self.openCodex
+            )
+            let settingsModel = CodexIntegrationSettingsModel()
+            let panel = ConnPanelController(model: viewModel) {
+                CodexIntegrationSettingsView(model: settingsModel)
             }
-        }
-        viewModel.onTurnOffSharedDesktop = { [weak self] in
-            guard let self else { return }
-            sharedDesktopSetupTask?.cancel()
-            sharedDesktopSetupTask = Task { [weak self] in
-                guard let self else { return }
-                let result = await sharedDesktopSetup.turnOff()
-                viewModel.finishSharedDesktopTurnOff(result)
-            }
-        }
-        configureGlobalToggle(controller: controller)
-        observeSystemLifecycle(controller: controller)
-        startAppServerMonitoring()
-        if viewModel.sharedDesktopSetupEnabled {
-            viewModel.beginSharedDesktopSetup()
-        } else if viewModel.sharedDesktopSetupExplicitlyDisabled {
-            viewModel.beginSharedDesktopTurnOff()
-        } else if viewModel.sharedDesktopLabsEnabled {
-            viewModel.requestSharedDesktopDiagnosis()
-        }
-        sharedDesktopDiagnosticsRefreshTask = Task { [weak self] in
-            var tick = 0
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(5)) } catch { return }
-                guard let self else { return }
-                viewModel.refreshSharedDesktopDiagnosticsFreshness()
-                tick += 1
-                if tick.isMultiple(of: 2), viewModel.sharedDesktopLabsEnabled {
-                    viewModel.requestSharedDesktopDiagnosis()
-                }
-            }
+            self.coordinator = coordinator
+            self.viewModel = viewModel
+            self.settingsModel = settingsModel
+            panelController = panel
+
+            configureGlobalToggle(panel: panel, model: viewModel)
+            observeSystemLifecycle(panel: panel)
+            viewModel.start()
+            settingsModel.refresh()
+        } catch {
+            ConnApplication.showStartupError(
+                "The v0.2 Integration runtime could not be initialized. \(error.localizedDescription)"
+            )
+            NSApp.terminate(nil)
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         panelController?.handleApplicationLifecycle(.terminating)
         globalHotKey?.invalidate()
-        appServerRuntimeGeneration = nil
-        appServerRuntime = nil
-        appServerTask?.cancel()
-        controlTask?.cancel()
-        newThreadTask?.cancel()
-        newThreadModelTask?.cancel()
-        newThreadHydrationTask?.cancel()
-        legacyPluginRetirementTask?.cancel()
-        sharedDesktopDiagnosticsTask?.cancel()
-        sharedDesktopSetupTask?.cancel()
-        sharedDesktopDiagnosticsRefreshTask?.cancel()
-        sharedDesktopProofTask?.cancel()
+        viewModel?.stop()
+        settingsModel?.cancel()
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
         observers.removeAll()
+        _ = singleInstanceClaim
     }
 
-    private func configureGlobalToggle(controller: ConnPanelController) {
-        let hotKey = GlobalHotKey { [weak controller] in
-            controller?.toggleExpansion()
+    private func configureGlobalToggle(
+        panel: ConnPanelController<CodexIntegrationSettingsView>,
+        model: ConnViewModel
+    ) {
+        let hotKey = GlobalHotKey { [weak panel] in
+            panel?.toggleExpansion()
         }
         do {
             try hotKey.register()
-            controller.setGlobalToggleAvailable(true)
+            panel.setGlobalToggleAvailable(true)
             globalHotKey = hotKey
         } catch {
-            controller.setGlobalToggleAvailable(false)
-            viewModel.shortcutIssue = "Control-Option-Space unavailable"
+            panel.setGlobalToggleAvailable(false)
+            model.shortcutIssue = "Control-Option-Space unavailable"
         }
     }
 
-    private func observeSystemLifecycle(controller: ConnPanelController) {
-        let center = NSWorkspace.shared.notificationCenter
-        observers.append(center.addObserver(
+    private func observeSystemLifecycle(
+        panel: ConnPanelController<CodexIntegrationSettingsView>
+    ) {
+        let workspace = NSWorkspace.shared.notificationCenter
+        observers.append(workspace.addObserver(
             forName: NSWorkspace.sessionDidResignActiveNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak panel] _ in
             MainActor.assumeIsolated {
-                self?.systemAvailability.apply(.userSessionActive(false))
-                self?.refreshShellLifecycle()
+                panel?.handleApplicationLifecycle(.sessionInactive)
             }
         })
-        observers.append(center.addObserver(
+        observers.append(workspace.addObserver(
             forName: NSWorkspace.sessionDidBecomeActiveNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.systemAvailability.apply(.userSessionActive(true))
-                self?.refreshShellLifecycle()
-            }
+        ) { [weak panel] _ in
+            MainActor.assumeIsolated { panel?.handleApplicationLifecycle(.active) }
         })
-        observers.append(center.addObserver(
+        observers.append(workspace.addObserver(
             forName: NSWorkspace.screensDidSleepNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak panel] _ in
             MainActor.assumeIsolated {
-                self?.systemAvailability.apply(.screensAwake(false))
-                self?.refreshShellLifecycle()
+                panel?.handleApplicationLifecycle(.screenAsleep)
             }
         })
-        observers.append(center.addObserver(
+        observers.append(workspace.addObserver(
             forName: NSWorkspace.screensDidWakeNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.systemAvailability.apply(.screensAwake(true))
-                self?.refreshShellLifecycle()
-            }
-        })
-        observers.append(NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil,
-            queue: .main
-        ) { [weak controller] _ in
-            MainActor.assumeIsolated { controller?.refreshDisplays() }
+        ) { [weak panel] _ in
+            MainActor.assumeIsolated { panel?.handleApplicationLifecycle(.active) }
         })
     }
 
-    private func refreshShellLifecycle() {
-        panelController?.handleApplicationLifecycle(systemAvailability.lifecycleState)
-    }
-
-    private func diagnoseSharedDesktop(
-        labsEnabled: Bool,
-        generation: SharedDesktopDiagnosisGeneration
-    ) {
-        sharedDesktopDiagnosticsTask?.cancel()
-        let candidate = viewModel.sharedDesktopCandidateEvidence()
-        let verificationConfirmed = viewModel.confirmsDesktopObservedCandidateEvent
-        sharedDesktopDiagnosticsTask = Task { [weak self] in
-            guard let self else { return }
-            let snapshot = await sharedDesktopDiagnostics.diagnose(
-                isLabsFeatureEnabled: labsEnabled,
-                isAppManagedSetupEnabled: viewModel.sharedDesktopSetupEnabled,
-                candidate: candidate,
-                verificationConfirmed: verificationConfirmed
-            )
-            guard !Task.isCancelled else { return }
-            guard viewModel.finishSharedDesktopDiagnosis(
-                snapshot,
-                generation: generation
-            ) else { return }
-        }
-    }
-
-    /// Starts the sole production state source. Conn observes and controls
-    /// Codex only through the stable App Server protocol.
     nonisolated private static func retireLegacyHooks() -> String? {
         do {
             switch try LegacyHookRetirementStore.userDefault().retire() {
             case .alreadyCompleted:
                 return nil
             case let .completed(removedLegacyRoots, legacyStateReappeared: false):
-                guard removedLegacyRoots > 0 else { return nil }
-                return "Legacy hook checkpoints were discarded. Verify the old Sidequest plugin is removed; managed-daemon monitoring remains active."
+                return removedLegacyRoots > 0
+                    ? "Legacy hook checkpoints were discarded."
+                    : nil
             case .completed(_, legacyStateReappeared: true):
-                return "Legacy hook state reappeared after retirement. Remove the old Sidequest plugin; managed-daemon monitoring remains active."
+                return "Legacy hook state reappeared. Remove the retired Sidequest plugin."
             }
         } catch {
-            return "Legacy hook cleanup needs repair. Managed-daemon monitoring remains active; the retired bridge was not re-enabled."
+            return "Legacy hook cleanup needs repair; the retired bridge was not re-enabled."
         }
     }
 
-    private func startAppServerMonitoring() {
-        let generation = UUID()
-        let runtime = AppServerMonitoringRuntime(configuration: .init(
-            // Keep large local histories responsive. The managed daemon can
-            // exceed the generic 15-second bound when asked to materialize
-            // hundreds of rows at once; smaller pages retain full cursor
-            // authority without forcing the session into reconnect churn.
-            pageSize: 100,
-            // Detailed history is selected-thread/on-demand. Avoid holding the
-            // entire shell in Hydrating while advisory startup resumes consume
-            // their timeout budget; the bounded active-discovery loop below
-            // still qualifies other running threads after connection.
-            maximumBulkQualifiedThreads: 0,
-            inventoryRequestTimeout: .seconds(30),
-            // Selected long-running tasks can carry tens of megabytes of
-            // bounded history. Keep their read/resume qualification alive
-            // long enough to replace metadata-only checkpoint shells.
-            qualificationTimeout: .seconds(30),
-            bulkQualificationRequiresActiveStatus: true,
-            activeDiscoveryInterval: 2,
-            activeDiscoveryThreadLimit: 20,
-            approvalRoutingPolicy: .allSubscribedConnectionsQualified
-        ), legacyHookRetirement: Self.retireLegacyHooks)
-        appServerRuntime = runtime
-        viewModel.onQualifySelectedSession = { [weak self] threadID in
-            guard self?.appServerRuntime === runtime else { return }
-            Task { await runtime.requestThreadQualification(threadID) }
-        }
-        viewModel.onRequestSync = { [weak self] in
-            guard self?.appServerRuntime === runtime else { return }
-            Task { await runtime.requestInventoryRefresh() }
-        }
-        viewModel.onControlSelectionChanged = { [weak self] selectionGeneration in
-            guard self?.appServerRuntime === runtime else { return }
-            Task { await runtime.updateControlSelectionGeneration(selectionGeneration) }
-        }
-        viewModel.onBeginSharedDesktopThreadProof = { [weak self] rawThreadID in
-            guard let self, self.appServerRuntime === runtime else { return }
-            self.sharedDesktopProofTask?.cancel()
-            self.sharedDesktopProofTask = Task { [weak self] in
-                guard let self, self.appServerRuntime === runtime else { return }
-                _ = await runtime.beginSharedDesktopThreadProof(rawThreadID)
-                let status = await runtime.sharedDesktopThreadProofStatus()
-                guard self.appServerRuntime === runtime else { return }
-                if self.viewModel.publishSharedDesktopThreadProofStatus(status) {
-                    self.viewModel.requestSharedDesktopDiagnosis()
+    nonisolated private static func openCodex(
+        _ sessionID: ConnSessionID
+    ) async -> Bool {
+        _ = sessionID
+        return await withCheckedContinuation { continuation in
+            Task { @MainActor in
+                guard let applicationURL = NSWorkspace.shared.urlForApplication(
+                    withBundleIdentifier: "com.openai.codex"
+                ) else {
+                    continuation.resume(returning: false)
+                    return
                 }
-            }
-        }
-        viewModel.onCancelSharedDesktopThreadProof = { [weak self] in
-            guard let self, self.appServerRuntime === runtime else { return }
-            self.sharedDesktopProofTask?.cancel()
-            self.sharedDesktopProofTask = Task { [weak self] in
-                guard let self, self.appServerRuntime === runtime else { return }
-                await runtime.cancelSharedDesktopThreadProof()
-            }
-        }
-        viewModel.onSubmitControl = { [weak self] intent, selectionGeneration, token in
-            guard let self, self.appServerRuntime === runtime else { return }
-            self.controlTask = Task { [weak self] in
-                let result = await runtime.executeControl(
-                    intent,
-                    selectionGeneration: selectionGeneration
-                )
-                guard let self, self.appServerRuntime === runtime else { return }
-                _ = self.viewModel.finishControlAction(token, intent: intent, result: result)
-                self.viewModel.setControlAvailability(await runtime.controlAvailability())
-            }
-        }
-        viewModel.onSubmitNewThread = { [weak self] intent in
-            guard let self, self.appServerRuntime === runtime else { return }
-            self.newThreadHydrationTask?.cancel()
-            self.newThreadTask = Task { [weak self] in
-                let result = await runtime.executeNewThread(intent)
-                guard let self, self.appServerRuntime === runtime else { return }
-                self.viewModel.finishNewThreadCreation(result)
-                self.viewModel.setControlAvailability(await runtime.controlAvailability())
-                guard result.outcome == .accepted,
-                      let threadID = result.createdThreadID else { return }
-                // The first immediate qualification can race App Server's
-                // durable turn write. These are bounded monitoring
-                // qualifications of the exact returned thread; no
-                // creation/turn control is replayed.
-                self.newThreadHydrationTask = Task { [weak self] in
-                    for delay in [Duration.milliseconds(500), .milliseconds(1_500)] {
-                        do { try await Task.sleep(for: delay) } catch { return }
-                        guard let self, self.appServerRuntime === runtime else { return }
-                        await runtime.requestThreadQualification(threadID.rawValue)
-                    }
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.activates = true
+                configuration.createsNewApplicationInstance = false
+                NSWorkspace.shared.openApplication(
+                    at: applicationURL,
+                    configuration: configuration
+                ) { _, error in
+                    continuation.resume(returning: error == nil)
                 }
-            }
-        }
-        viewModel.onRequestNewThreadModels = { [weak self] requestGeneration in
-            guard let self, self.appServerRuntime === runtime else { return }
-            self.newThreadModelTask?.cancel()
-            self.newThreadModelTask = Task { [weak self] in
-                let result = await runtime.loadNewThreadModelCatalog()
-                guard let self, self.appServerRuntime === runtime else { return }
-                self.viewModel.finishNewThreadModelLoading(
-                    result,
-                    generation: requestGeneration
-                )
-            }
-        }
-        viewModel.onUninstallLegacyPlugin = { [weak self] candidate in
-            guard let self, self.appServerRuntime === runtime else { return }
-            self.legacyPluginRetirementTask?.cancel()
-            self.legacyPluginRetirementTask = Task { [weak self] in
-                let outcome = await runtime.uninstallLegacyPlugin(confirmed: candidate)
-                guard let self, self.appServerRuntime === runtime else { return }
-                self.viewModel.finishLegacyPluginRemoval(outcome)
-            }
-        }
-        appServerRuntimeGeneration = generation
-        appServerTask = Task { [weak self] in
-            await runtime.run { [weak self] update in
-                guard let self,
-                      self.appServerRuntimeGeneration == generation
-                else { return }
-                self.viewModel.publish(
-                    update.snapshot,
-                    threadModelSelections: update.threadModelSelections,
-                    hooks: update.hooks,
-                    legacyPluginCandidate: update.legacyPluginCandidate,
-                    legacyHookRetirementDiagnostic: update.legacyHookRetirementDiagnostic,
-                    runtimeStatus: update.status,
-                    at: update.observedAt
-                )
-                Task { [weak self] in
-                    let proof = await runtime.sharedDesktopThreadProofStatus()
-                    guard let self,
-                          self.appServerRuntimeGeneration == generation else { return }
-                    if self.viewModel.publishSharedDesktopThreadProofStatus(proof),
-                       self.viewModel.sharedDesktopLabsEnabled {
-                        self.viewModel.requestSharedDesktopDiagnosis()
-                    }
-                }
-                Task { [weak self] in
-                    let availability = await runtime.controlAvailability()
-                    guard let self,
-                          self.appServerRuntimeGeneration == generation else { return }
-                    self.viewModel.setControlAvailability(availability)
-                }
-                self.panelController?.publishPassiveUpdate()
             }
         }
     }
-
 }

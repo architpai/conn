@@ -30,9 +30,6 @@ private enum ConnAppCoreTestRunner {
         await runCase("Phase8RuntimePolicy", owner: .appCore, into: &suite, totals: &ownerAssertions) {
             try await Phase8RuntimePolicyTestCases.run(into: &$0)
         }
-        await runCase("Phase8ShellRegression", owner: .ui, into: &suite, totals: &ownerAssertions) {
-            Phase8ShellRegressionTestCases.run(into: &$0)
-        }
         await runCase("Phase8PresentationPayload", owner: .appCore, into: &suite, totals: &ownerAssertions) {
             try await Phase8PresentationPayloadTestCases.run(into: &$0)
         }
@@ -41,9 +38,6 @@ private enum ConnAppCoreTestRunner {
         }
         await runCase("Phase87Presentation", owner: .appCore, into: &suite, totals: &ownerAssertions) {
             await Phase87PresentationTestCases.run(into: &$0)
-        }
-        await runCase("Phase87Shell", owner: .ui, into: &suite, totals: &ownerAssertions) {
-            Phase87ShellTestCases.run(into: &$0)
         }
         await runCase("Phase88Durability", owner: .appCore, into: &suite, totals: &ownerAssertions) {
             try Phase88DurabilityTestCases.run(into: &$0)
@@ -56,12 +50,6 @@ private enum ConnAppCoreTestRunner {
         }
         await runCase("Phase11LegacyHookRetirement", owner: .composition, into: &suite, totals: &ownerAssertions) {
             try Phase11LegacyHookRetirementTestCases.run(into: &$0)
-        }
-        await runCase("Phase115UIOverhaul", owner: .ui, into: &suite, totals: &ownerAssertions) {
-            Phase115UIOverhaulTestCases.run(into: &$0)
-        }
-        await runCase("Phase115CompactShelfMotion", owner: .ui, into: &suite, totals: &ownerAssertions) {
-            Phase115CompactShelfMotionTestCases.run(into: &$0)
         }
         await runCase("Phase115NotificationPolicy", owner: .appCore, into: &suite, totals: &ownerAssertions) {
             await Phase115NotificationPolicyTestCases.run(into: &$0)

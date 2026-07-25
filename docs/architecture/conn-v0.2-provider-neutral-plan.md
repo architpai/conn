@@ -659,6 +659,8 @@ Checkpoint intent: `refactor: add neutral integration aggregation`
 
 ### Phase 5 — Cut the application over atomically
 
+Evidence: [Conn v0.2 Phase 5 results](conn-v0.2-phase5-results.md).
+
 Tasks:
 
 1. Create `ConnUI` and move the generic view model, surface, panel, hot-key,

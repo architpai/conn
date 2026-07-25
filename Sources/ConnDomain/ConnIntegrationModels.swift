@@ -176,6 +176,72 @@ public enum SessionIssueKind: String, Codable, Hashable, Sendable {
     case run
 }
 
+public struct ConnQuestionChoice: Equatable, Hashable, Sendable {
+    public let label: String
+    public let detail: String
+
+    public init(
+        label: String,
+        detail: String,
+        bounds: ConnDomainBounds = .default
+    ) {
+        self.label = ConnDomainBounds.boundedSingleLine(
+            label,
+            maximumUTF8Bytes: bounds.maximumSummaryUTF8Bytes
+        )
+        self.detail = ConnDomainBounds.boundedSingleLine(
+            detail,
+            maximumUTF8Bytes: bounds.maximumSummaryUTF8Bytes
+        )
+    }
+}
+
+public struct ConnStructuredQuestion: Equatable, Sendable {
+    public let id: String
+    public let header: String
+    public let prompt: String
+    public let choices: [ConnQuestionChoice]
+    public let permitsOther: Bool
+    public let isSecret: Bool
+
+    public init(
+        id: String,
+        header: String,
+        prompt: String,
+        choices: [ConnQuestionChoice] = [],
+        permitsOther: Bool,
+        isSecret: Bool,
+        bounds: ConnDomainBounds = .default
+    ) {
+        self.id = ConnDomainBounds.boundedSingleLine(
+            id,
+            maximumUTF8Bytes: bounds.maximumIdentifierUTF8Bytes
+        )
+        self.header = ConnDomainBounds.boundedSingleLine(
+            header,
+            maximumUTF8Bytes: bounds.maximumTitleUTF8Bytes
+        )
+        self.prompt = ConnDomainBounds.boundedSingleLine(
+            prompt,
+            maximumUTF8Bytes: bounds.maximumSummaryUTF8Bytes
+        )
+        self.choices = Array(choices.prefix(bounds.maximumAnswersPerQuestion))
+        self.permitsOther = permitsOther
+        self.isSecret = isSecret
+    }
+}
+
+/// Bounded semantic response shape. Provider request tokens and envelopes
+/// remain adapter-internal; only the information required to present an exact
+/// Conn response crosses the seam.
+public enum AttentionRequestContent: Equatable, Sendable {
+    case approval(availableDecisions: [ApprovalDecision])
+    case structuredQuestions(
+        questions: [ConnStructuredQuestion],
+        autoResolutionMilliseconds: UInt64?
+    )
+}
+
 public struct WorkspaceEvidence: Codable, Equatable, Hashable, Sendable {
     public let canonicalPath: String
     public let equivalenceKey: String?
@@ -238,6 +304,7 @@ public struct AttentionRequest: Equatable, Identifiable, Sendable {
     public let sessionID: ConnSessionID
     public let runID: RunID?
     public let kind: AttentionRequestKind
+    public let content: AttentionRequestContent
     public let summary: String
     public let observedAt: Date
 
@@ -246,6 +313,7 @@ public struct AttentionRequest: Equatable, Identifiable, Sendable {
         sessionID: ConnSessionID,
         runID: RunID? = nil,
         kind: AttentionRequestKind,
+        content: AttentionRequestContent? = nil,
         summary: String,
         observedAt: Date,
         bounds: ConnDomainBounds = .default
@@ -254,6 +322,17 @@ public struct AttentionRequest: Equatable, Identifiable, Sendable {
         self.sessionID = sessionID
         self.runID = runID
         self.kind = kind
+        self.content = content ?? {
+            switch kind {
+            case .approval:
+                .approval(availableDecisions: [.approve, .deny])
+            case .structuredQuestion:
+                .structuredQuestions(
+                    questions: [],
+                    autoResolutionMilliseconds: nil
+                )
+            }
+        }()
         self.summary = ConnDomainBounds.boundedSingleLine(
             summary,
             maximumUTF8Bytes: bounds.maximumSummaryUTF8Bytes

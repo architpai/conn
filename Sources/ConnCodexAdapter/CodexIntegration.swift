@@ -564,6 +564,7 @@ package enum CodexProjectionMapper {
                     kind: request.kind == .structuredQuestion
                         ? .structuredQuestion
                         : .approval,
+                    content: requestContent(request),
                     summary: requestSummary(request),
                     observedAt: request.startedAt
                 ))
@@ -671,6 +672,48 @@ package enum CodexProjectionMapper {
             facts.questions.first?.prompt ?? "Codex needs an answer"
         case .unsupported:
             "Codex needs attention"
+        }
+    }
+
+    private static func requestContent(
+        _ request: AppServerProjectedRequest
+    ) -> AttentionRequestContent {
+        switch request.facts {
+        case let .commandApproval(facts):
+            .approval(availableDecisions: facts.availableChoices.map(approvalDecision))
+        case let .fileChangeApproval(facts):
+            .approval(availableDecisions: facts.availableChoices.map(approvalDecision))
+        case let .permissionsApproval(facts):
+            .approval(availableDecisions: facts.availableChoices.map(approvalDecision))
+        case let .structuredQuestions(facts):
+            .structuredQuestions(
+                questions: facts.questions.map { question in
+                    ConnStructuredQuestion(
+                        id: question.id,
+                        header: question.header,
+                        prompt: question.prompt,
+                        choices: question.options?.map {
+                            .init(label: $0.label, detail: $0.detail)
+                        } ?? [],
+                        permitsOther: question.permitsOther,
+                        isSecret: question.isSecret
+                    )
+                },
+                autoResolutionMilliseconds: facts.autoResolutionMilliseconds
+            )
+        case .unsupported:
+            .approval(availableDecisions: [])
+        }
+    }
+
+    private static func approvalDecision(
+        _ choice: AppServerApprovalChoice
+    ) -> ApprovalDecision {
+        switch choice {
+        case .approve: .approve
+        case .approveForSession: .approveForSession
+        case .deny: .deny
+        case .cancel: .cancel
         }
     }
 

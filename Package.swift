@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "ConnDomain", targets: ["ConnDomain"]),
         .library(name: "ConnAppCore", targets: ["ConnAppCore"]),
         .library(name: "ConnCodexAdapter", targets: ["ConnCodexAdapter"]),
+        .library(name: "ConnUI", targets: ["ConnUI"]),
         .executable(name: "Conn", targets: ["ConnApp"]),
         .executable(name: "conn-domain-tests", targets: ["ConnDomainTests"]),
         .executable(name: "conn-app-core-tests", targets: ["ConnAppCoreTests"]),
@@ -18,6 +19,7 @@ let package = Package(
             name: "conn-codex-adapter-tests",
             targets: ["ConnCodexAdapterTests"]
         ),
+        .executable(name: "conn-ui-tests", targets: ["ConnUITests"]),
         .executable(name: "conn-packaging-probe", targets: ["ConnPackagingProbe"]),
     ],
     targets: [
@@ -28,7 +30,16 @@ let package = Package(
         ),
         .executableTarget(
             name: "ConnApp",
-            dependencies: ["ConnDomain", "ConnAppCore", "ConnCodexAdapter"]
+            dependencies: [
+                "ConnDomain",
+                "ConnAppCore",
+                "ConnCodexAdapter",
+                "ConnUI",
+            ]
+        ),
+        .target(
+            name: "ConnUI",
+            dependencies: ["ConnDomain", "ConnAppCore"]
         ),
         .executableTarget(
             name: "ConnDomainTests",
@@ -52,6 +63,16 @@ let package = Package(
             name: "ConnCodexAdapterTests",
             dependencies: ["ConnCodexAdapter", "ConnAppCore", "ConnDomain"],
             path: "Tests/ConnCodexAdapterTests"
+        ),
+        .executableTarget(
+            name: "ConnUITests",
+            dependencies: [
+                "ConnUI",
+                "ConnAppCore",
+                "ConnCodexAdapter",
+                "ConnDomain",
+            ],
+            path: "Tests/ConnUITests"
         ),
         .executableTarget(name: "ConnPackagingProbe"),
     ]
