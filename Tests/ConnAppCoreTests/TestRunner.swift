@@ -6,7 +6,6 @@ private enum ConnAppCoreTestRunner {
         case codexAdapter = "ConnCodexAdapter"
         case appCore = "ConnAppCore"
         case ui = "ConnUI"
-        case composition = "ConnApp"
     }
 
     static func main() async {
@@ -24,38 +23,8 @@ private enum ConnAppCoreTestRunner {
         await runCase("Phase4NeutralAggregation", owner: .appCore, into: &suite, totals: &ownerAssertions) {
             try await Phase4NeutralAggregationTestCases.run(into: &$0)
         }
-        await runCase("Phase7PersistenceMigration", owner: .appCore, into: &suite, totals: &ownerAssertions) {
-            try await Phase7PersistenceMigrationTestCases.run(into: &$0)
-        }
-        await runCase("Phase8RuntimePolicy", owner: .appCore, into: &suite, totals: &ownerAssertions) {
-            try await Phase8RuntimePolicyTestCases.run(into: &$0)
-        }
-        await runCase("Phase8PresentationPayload", owner: .appCore, into: &suite, totals: &ownerAssertions) {
-            try await Phase8PresentationPayloadTestCases.run(into: &$0)
-        }
-        await runCase("Phase85ProjectPresentation", owner: .appCore, into: &suite, totals: &ownerAssertions) {
-            await Phase85ProjectPresentationTestCases.run(into: &$0)
-        }
-        await runCase("Phase87Presentation", owner: .appCore, into: &suite, totals: &ownerAssertions) {
-            await Phase87PresentationTestCases.run(into: &$0)
-        }
         await runCase("Phase88Durability", owner: .appCore, into: &suite, totals: &ownerAssertions) {
             try Phase88DurabilityTestCases.run(into: &$0)
-        }
-        await runCase("Phase9ThreadControl", owner: .appCore, into: &suite, totals: &ownerAssertions) {
-            try await Phase9ThreadControlTestCases.run(into: &$0)
-        }
-        await runCase("Phase92OutcomeReview", owner: .appCore, into: &suite, totals: &ownerAssertions) {
-            await Phase92OutcomeReviewTestCases.run(into: &$0)
-        }
-        await runCase("Phase11LegacyHookRetirement", owner: .composition, into: &suite, totals: &ownerAssertions) {
-            try Phase11LegacyHookRetirementTestCases.run(into: &$0)
-        }
-        await runCase("Phase115NotificationPolicy", owner: .appCore, into: &suite, totals: &ownerAssertions) {
-            await Phase115NotificationPolicyTestCases.run(into: &$0)
-        }
-        await runCase("Phase115ThreadPickerPolicy", owner: .appCore, into: &suite, totals: &ownerAssertions) {
-            await Phase115ThreadPickerPolicyTestCases.run(into: &$0)
         }
 
         if suite.failures.isEmpty {

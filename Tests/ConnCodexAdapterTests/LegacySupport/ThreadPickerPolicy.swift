@@ -1,4 +1,5 @@
 import Foundation
+import ConnCodexAdapter
 
 public enum ThreadPickerActivityWindow: String, CaseIterable, Equatable, Sendable {
     case last24Hours

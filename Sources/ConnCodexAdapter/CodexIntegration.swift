@@ -213,6 +213,25 @@ public actor CodexIntegration: ConnIntegration {
         }
     }
 
+    /// Migration-edge inspection for the exact retired Sidequest plugin.
+    /// Candidate identity remains connection-scoped and is never persisted.
+    public func legacyPluginCandidate() async
+        -> LegacySidequestPluginCandidate?
+    {
+        guard let runtime else { return nil }
+        await runtime.requestInventoryRefresh()
+        return await runtime.legacyPluginCandidate()
+    }
+
+    /// Executes only after ConnApp presents the captured candidate and the
+    /// user confirms that exact identity.
+    public func uninstallLegacyPlugin(
+        confirmed candidate: LegacySidequestPluginCandidate
+    ) async -> LegacySidequestPluginUninstallOutcome {
+        guard let runtime else { return .staleConfirmation }
+        return await runtime.uninstallLegacyPlugin(confirmed: candidate)
+    }
+
     public func disconnect() async {
         await feedBootstrap?.invalidate()
         feedBootstrap = nil

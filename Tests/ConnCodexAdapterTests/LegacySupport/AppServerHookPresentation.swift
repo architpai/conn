@@ -1,4 +1,5 @@
 import Foundation
+import ConnCodexAdapter
 import ConnDomain
 
 public struct AppServerConfiguredHookPresentation: Equatable, Sendable, Identifiable {

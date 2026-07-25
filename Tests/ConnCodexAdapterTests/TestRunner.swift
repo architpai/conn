@@ -18,10 +18,23 @@ struct TestSuite {
         failures.append(message)
     }
 
+    mutating func require<T>(_ value: T?, _ message: String) throws -> T {
+        assertions += 1
+        guard let value else {
+            failures.append(message)
+            throw TestFailure.requiredValueMissing(message)
+        }
+        return value
+    }
+
     mutating func recordUnexpected(_ error: Error, context: String) {
         assertions += 1
         failures.append("\(context): \(error)")
     }
+}
+
+enum TestFailure: Error {
+    case requiredValueMissing(String)
 }
 
 enum Phase3TestScaffolding {
@@ -48,6 +61,14 @@ struct ConnCodexAdapterTestRunner {
         await Phase6LifecycleTestCases.run(in: &suite)
         await Phase6ConnectionTestCases.run(in: &suite)
         await Phase7InboundEnvelopeTestCases.run(in: &suite)
+        do {
+            try await Phase7AppServerProjectionTestCases.run(into: &suite)
+        } catch {
+            suite.recordUnexpected(
+                error,
+                context: "unexpected Codex projection test error"
+            )
+        }
         await Phase10SharedDesktopHostInspectorTestCases.run(in: &suite)
         do {
             try Phase10SharedDesktopModeTestCases.run(into: &suite)
@@ -61,13 +82,23 @@ struct ConnCodexAdapterTestRunner {
             try await Phase9ThreadControlRuntimeTestCases.run(into: &suite)
             try await Phase11HookVisibilityTestCases.run(into: &suite)
             await Phase11LegacyPluginRetirementTestCases.run(into: &suite)
+            Phase6ProviderUIPolicyParityTestCases.run(into: &suite)
+            try await Phase7PersistenceMigrationTestCases.run(into: &suite)
+            try await Phase8RuntimePolicyTestCases.run(into: &suite)
+            try await Phase8PresentationPayloadTestCases.run(into: &suite)
+            await Phase85ProjectPresentationTestCases.run(into: &suite)
+            await Phase87PresentationTestCases.run(into: &suite)
+            try await Phase9ThreadControlTestCases.run(into: &suite)
+            await Phase92OutcomeReviewTestCases.run(into: &suite)
+            await Phase115NotificationPolicyTestCases.run(into: &suite)
+            await Phase115ThreadPickerPolicyTestCases.run(into: &suite)
             let parityAssertions = suite.assertions
             suite.check(
-                parityAssertions == 984,
-                "Phase 1 CodexAdapter denominator remains exactly 984 assertions"
+                parityAssertions == 1_451,
+                "reconciled CodexAdapter denominator remains exactly 1,451 assertions"
             )
             try await Phase3CodexIntegrationMappingTestCases.run(into: &suite)
-            print("V0.2 CODEX PARITY: \(parityAssertions) of 984 assertions")
+            print("V0.2 CODEX PARITY: \(parityAssertions) of 1,451 assertions")
             print(
                 "V0.2 CODEX PHASE3: "
                     + "\(suite.assertions - parityAssertions - 1) new assertions"

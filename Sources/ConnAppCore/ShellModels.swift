@@ -1,5 +1,4 @@
 import CoreGraphics
-import ConnCodexAdapter
 import Darwin
 import Foundation
 import ConnDomain
@@ -159,40 +158,40 @@ public struct ShellCompactShelfPresentation: Equatable, Sendable, Identifiable {
     public let mode: ShellCompactShelfMode
     public let verb: String
     public let detail: String
-    public let requestID: AppServerScopedRequestID?
-    public let threadID: AppServerThreadID
-    public let turnID: AppServerTurnID?
-    public let approvalChoices: [AppServerApprovalChoice]
+    public let responseAuthority: AttentionResponseAuthority?
+    public let sessionID: ConnSessionID
+    public let runID: RunID?
+    public let approvalChoices: [ApprovalDecision]
 
     public init(
         id: String,
         mode: ShellCompactShelfMode,
         verb: String,
         detail: String,
-        requestID: AppServerScopedRequestID? = nil,
-        threadID: AppServerThreadID,
-        turnID: AppServerTurnID? = nil,
-        approvalChoices: [AppServerApprovalChoice] = []
+        responseAuthority: AttentionResponseAuthority? = nil,
+        sessionID: ConnSessionID,
+        runID: RunID? = nil,
+        approvalChoices: [ApprovalDecision] = []
     ) {
         self.id = id
         self.mode = mode
         self.verb = verb
         self.detail = detail
-        self.requestID = requestID
-        self.threadID = threadID
-        self.turnID = turnID
+        self.responseAuthority = responseAuthority
+        self.sessionID = sessionID
+        self.runID = runID
         self.approvalChoices = approvalChoices
     }
 }
 
 public enum ShellCompactApprovalPolicy {
-    public static let displayOrder: [AppServerApprovalChoice] = [
+    public static let displayOrder: [ApprovalDecision] = [
         .approve, .approveForSession, .deny,
     ]
 
     public static func visibleChoices(
-        from availableChoices: [AppServerApprovalChoice]
-    ) -> [AppServerApprovalChoice] {
+        from availableChoices: [ApprovalDecision]
+    ) -> [ApprovalDecision] {
         let available = Set(availableChoices)
         return displayOrder.filter(available.contains)
     }
@@ -1407,19 +1406,6 @@ public enum ShellGraphiteChromePolicy {
     }
 }
 
-public enum SharedDesktopLabsLayoutPolicy {
-    public static let preferredViewportHeight: CGFloat = 560
-    public static let minimumViewportHeight: CGFloat = 360
-    public static let screenClearance: CGFloat = 72
-
-    public static func viewportHeight(availableHeight: CGFloat) -> CGFloat {
-        min(
-            preferredViewportHeight,
-            max(minimumViewportHeight, availableHeight - screenClearance)
-        )
-    }
-}
-
 public enum ShellTranscriptActivityPolicy {
     public static let maximumVisibleEntryCount = 40
 
@@ -1437,12 +1423,12 @@ public enum ShellTranscriptActivityPolicy {
     public static func shouldAutoExpand(
         isLatestActivity: Bool,
         hasFollowingUserFacingText: Bool,
-        visualState: AppServerThreadVisualState
+        visualState: ConnSessionVisualState
     ) -> Bool {
         guard isLatestActivity, !hasFollowingUserFacingText else { return false }
         switch visualState {
-        case .running, .waitingForApproval, .needsInput: return true
-        case .unreviewedOutcome, .failed, .idle, .notLoaded, .unknown: return false
+        case .working, .waitingForAttention: return true
+        case .completed, .failed, .idle, .stale, .unknown: return false
         }
     }
 

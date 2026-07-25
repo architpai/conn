@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import ConnAppCore
 
 enum Phase11LegacyHookRetirementTestCases {
     static func run(into suite: inout TestSuite) throws {

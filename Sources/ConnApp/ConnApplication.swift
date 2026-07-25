@@ -103,7 +103,7 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
                 coordinator: coordinator,
                 openHarness: Self.openCodex
             )
-            let settingsModel = CodexIntegrationSettingsModel()
+            let settingsModel = CodexIntegrationSettingsModel(integration: codex)
             let panel = ConnPanelController(model: viewModel) {
                 CodexIntegrationSettingsView(model: settingsModel)
             }

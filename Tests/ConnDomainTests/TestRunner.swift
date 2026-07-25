@@ -6,7 +6,6 @@ private enum ConnDomainTestRunner {
         var suite = TestSuite()
 
         do {
-            try await Phase7AppServerProjectionTestCases.run(into: &suite)
             try await Phase2ConnIntegrationTestCases.run(into: &suite)
             try Phase4CheckpointRestoreTestCases.run(into: &suite)
         } catch {

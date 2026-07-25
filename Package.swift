@@ -26,7 +26,7 @@ let package = Package(
         .target(name: "ConnDomain"),
         .target(
             name: "ConnAppCore",
-            dependencies: ["ConnDomain", "ConnCodexAdapter"]
+            dependencies: ["ConnDomain"]
         ),
         .executableTarget(
             name: "ConnApp",
@@ -69,7 +69,6 @@ let package = Package(
             dependencies: [
                 "ConnUI",
                 "ConnAppCore",
-                "ConnCodexAdapter",
                 "ConnDomain",
             ],
             path: "Tests/ConnUITests"

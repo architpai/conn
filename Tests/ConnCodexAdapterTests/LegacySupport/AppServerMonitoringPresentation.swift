@@ -2,6 +2,22 @@ import Foundation
 import ConnCodexAdapter
 import ConnDomain
 
+public enum AppServerRowPriority: Int, Codable, Comparable, Sendable {
+    case attention = 0
+    case integrationRepair = 1
+    case outcome = 2
+    case running = 3
+    case noRecentSignals = 4
+    case recent = 5
+
+    public static func < (
+        lhs: AppServerRowPriority,
+        rhs: AppServerRowPriority
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 public enum AppServerPresentationTone: String, Equatable, Sendable {
     case neutral
     case active
@@ -564,7 +580,7 @@ public struct AppServerThreadPresentation: Equatable, Sendable, Identifiable {
     public let timeline: [AppServerTimelineItemPresentation]
     public let tokenUsage: AppServerTokenUsagePresentation?
     public let plan: AppServerTurnPlanPresentation?
-    public let rowPriority: ShellRowPriority
+    public let rowPriority: AppServerRowPriority
     public let tone: AppServerPresentationTone
     public let isActive: Bool
     public let supportsExactThreadNavigation: Bool
@@ -1044,7 +1060,7 @@ public struct AppServerThreadPresentation: Equatable, Sendable, Identifiable {
         freshness: AppServerProjectionFreshness,
         visualState: AppServerThreadVisualState,
         isOutcomeUnreviewed: Bool
-    ) -> ShellRowPriority {
+    ) -> AppServerRowPriority {
         if visualState == .running { return .running }
         guard freshness == .live else { return .noRecentSignals }
         if !thread.requests.isEmpty { return .attention }

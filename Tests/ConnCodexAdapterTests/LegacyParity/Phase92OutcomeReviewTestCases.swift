@@ -1,5 +1,6 @@
 import Foundation
 import ConnAppCore
+import ConnCodexAdapter
 import ConnDomain
 
 enum Phase92OutcomeReviewTestCases {

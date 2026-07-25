@@ -1,4 +1,5 @@
 import Foundation
+import ConnCodexAdapter
 import ConnDomain
 
 /// Conn-local review identity. It contains only upstream IDs and is kept

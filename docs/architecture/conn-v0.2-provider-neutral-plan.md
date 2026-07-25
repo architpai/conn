@@ -699,6 +699,8 @@ Checkpoint intent: `refactor: cut Conn over to integration architecture`
 
 ### Phase 6 — Remove the legacy architecture
 
+Evidence: [Conn v0.2 Phase 6 results](conn-v0.2-phase6-results.md).
+
 Tasks:
 
 1. Delete App Server-shaped Domain, AppCore, view-model, presentation, control,

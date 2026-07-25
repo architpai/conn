@@ -1,4 +1,5 @@
 import Foundation
+import ConnCodexAdapter
 import ConnDomain
 
 enum Phase7AppServerProjectionTestCases {

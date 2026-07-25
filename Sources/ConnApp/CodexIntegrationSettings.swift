@@ -12,14 +12,19 @@ final class CodexIntegrationSettingsModel: ObservableObject {
     @Published private(set) var isWorking = false
     @Published private(set) var diagnostics: SharedDesktopDiagnosticsSnapshot?
     @Published private(set) var setupResult: SharedDesktopSetupResult?
+    @Published private(set) var legacyPluginCandidate:
+        LegacySidequestPluginCandidate?
+    @Published private(set) var legacyPluginResult: String?
 
     private static let labsKey = "sharedDesktopLabs.v1"
     private static let setupKey = "sharedDesktopAppManaged.v1"
     private let diagnosticsCoordinator = SharedDesktopDiagnosticsCoordinator()
     private let setupCoordinator = SharedDesktopSetupCoordinator()
+    private let integration: CodexIntegration
     private var task: Task<Void, Never>?
 
-    init() {
+    init(integration: CodexIntegration) {
+        self.integration = integration
         labsEnabled = UserDefaults.standard.bool(forKey: Self.labsKey)
     }
 
@@ -38,6 +43,7 @@ final class CodexIntegrationSettingsModel: ObservableObject {
             )
             guard !Task.isCancelled else { return }
             diagnostics = snapshot
+            legacyPluginCandidate = await integration.legacyPluginCandidate()
             isWorking = false
         }
     }
@@ -74,6 +80,29 @@ final class CodexIntegrationSettingsModel: ObservableObject {
 
     func cancel() {
         task?.cancel()
+    }
+
+    func uninstallLegacyPlugin() {
+        guard let candidate = legacyPluginCandidate else { return }
+        task?.cancel()
+        task = Task { [weak self] in
+            guard let self else { return }
+            isWorking = true
+            let outcome = await integration.uninstallLegacyPlugin(
+                confirmed: candidate
+            )
+            legacyPluginResult = switch outcome {
+            case .removed: "The retired Sidequest plugin was removed and verified."
+            case .stillInstalled: "Codex still reports the retired plugin as installed."
+            case .staleConfirmation: "The connection changed. Refresh before confirming again."
+            case .alreadyAttempted: "Conn will not repeat this uninstall automatically."
+            case .acknowledgementUncertain:
+                "Codex may have accepted the uninstall; verify manually before retrying."
+            case .unsupported: "This Codex version does not support verified removal."
+            }
+            legacyPluginCandidate = nil
+            isWorking = false
+        }
     }
 }
 
@@ -127,6 +156,33 @@ struct CodexIntegrationSettingsView: View {
             )
             .font(.system(size: 10))
             .foregroundStyle(.secondary)
+
+            if let candidate = model.legacyPluginCandidate {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Retired Sidequest plugin detected")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(
+                        "\(candidate.pluginID) from \(candidate.marketplaceName)"
+                    )
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    Button("Remove this exact plugin") {
+                        model.uninstallLegacyPlugin()
+                    }
+                    .disabled(model.isWorking)
+                    Text(
+                        "This consequential action is bound to the displayed plugin and current Codex connection. Conn never retries it automatically."
+                    )
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                }
+            }
+
+            if let legacyPluginResult = model.legacyPluginResult {
+                Text(legacyPluginResult)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
 
             Text(
                 "Harness attribution uses the text badge “Codex” in this alpha. OpenAI’s mark remains reserved until the exact in-product placement clears the current brand terms."

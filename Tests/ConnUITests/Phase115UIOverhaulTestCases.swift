@@ -1,7 +1,6 @@
 import CoreGraphics
 import Foundation
 import ConnAppCore
-import ConnCodexAdapter
 import ConnDomain
 
 enum Phase115UIOverhaulTestCases {
@@ -10,108 +9,11 @@ enum Phase115UIOverhaulTestCases {
         testExpandedGraphiteTarget(into: &suite)
         testCompactShelfIdentity(into: &suite)
         testAcknowledgedNewChatPlaceholder(into: &suite)
-        testRequiredNewChatModelSelection(into: &suite)
-        testRunningThreadModelLabel(into: &suite)
-        testRunningThreadModelResumeAuthority(into: &suite)
-        testExpandedIdleThreadRequestsMissingModelAuthority(into: &suite)
-        testNewChatUsesDefaultWorkspace(into: &suite)
         testReduceMotionPolicy(into: &suite)
         testExpandedContentTransitionPolicy(into: &suite)
         testSurfaceGeometryTransitionGeneration(into: &suite)
         testGraphiteChromePolicy(into: &suite)
         testTranscriptActivityDisclosurePolicy(into: &suite)
-        testSharedDesktopLabsViewport(into: &suite)
-    }
-
-    private static func testSharedDesktopLabsViewport(into suite: inout TestSuite) {
-        suite.checkEqual(
-            SharedDesktopLabsLayoutPolicy.viewportHeight(availableHeight: 900),
-            560,
-            "Labs uses its preferred height on a roomy display"
-        )
-        suite.checkEqual(
-            SharedDesktopLabsLayoutPolicy.viewportHeight(availableHeight: 576),
-            504,
-            "Labs leaves enough screen clearance on the reported compact display"
-        )
-        suite.checkEqual(
-            SharedDesktopLabsLayoutPolicy.viewportHeight(availableHeight: 400),
-            360,
-            "Labs retains a usable minimum scroll viewport"
-        )
-    }
-
-    private static func testRunningThreadModelLabel(into suite: inout TestSuite) {
-        let options = [AppServerNewThreadModelOption(
-            id: "gpt-5.4-high",
-            model: "gpt-5.4",
-            displayName: "GPT-5.4",
-            detail: "General-purpose model",
-            isDefault: true
-        )]
-        suite.checkEqual(
-            AppServerThreadModelLabelPolicy.label(
-                selection: .init(model: "gpt-5.4", reasoningEffort: "high"),
-                options: options
-            ),
-            "GPT-5.4 · High reasoning",
-            "a running thread names its authoritative model and reasoning effort"
-        )
-        suite.checkEqual(
-            AppServerThreadModelLabelPolicy.label(selection: nil, options: options),
-            "Loading model…",
-            "missing live metadata never masquerades as a previous-model choice"
-        )
-    }
-
-    private static func testRunningThreadModelResumeAuthority(into suite: inout TestSuite) {
-        let selection = AppServerMonitoringRuntime.threadModelSelection(from: .object([
-            "model": .string("gpt-5.4"),
-            "reasoningEffort": .string("xhigh"),
-            "thread": .object(["id": .string("running-thread")]),
-        ]))
-        suite.checkEqual(
-            selection,
-            .init(model: "gpt-5.4", reasoningEffort: "xhigh"),
-            "the correlated resume response supplies the running thread's model authority"
-        )
-        suite.checkEqual(
-            AppServerMonitoringRuntime.threadModelSelection(from: .object([
-                "model": .string("gpt-5.4\nspoofed"),
-                "reasoningEffort": .string("high"),
-            ])),
-            nil,
-            "unsafe model labels are rejected instead of entering presentation state"
-        )
-    }
-
-    private static func testExpandedIdleThreadRequestsMissingModelAuthority(
-        into suite: inout TestSuite
-    ) {
-        let threadID = AppServerThreadID(rawValue: "idle-thread")
-        suite.check(
-            AppServerThreadModelQualificationPolicy.shouldRequestForExpandedPresentation(
-                selectedThreadID: threadID,
-                knownSelections: [:]
-            ),
-            "expanding an auto-selected idle thread requests its missing model authority"
-        )
-        suite.check(
-            !AppServerThreadModelQualificationPolicy.shouldRequestForExpandedPresentation(
-                selectedThreadID: threadID,
-                knownSelections: [
-                    threadID: .init(model: "gpt-5.4", reasoningEffort: "high"),
-                ]
-            ),
-            "expansion does not resume a thread whose model authority is already known"
-        )
-        suite.check(
-            !AppServerThreadModelQualificationPolicy.shouldRequestForExpandedPresentation(
-                selectedThreadID: nil,
-                knownSelections: [:]
-            ),
-            "expansion without a selected thread sends no qualification request"
-        )
     }
 
     private static func testCompactShelfGeometry(into suite: inout TestSuite) {
@@ -196,30 +98,44 @@ enum Phase115UIOverhaulTestCases {
     }
 
     private static func testCompactShelfIdentity(into suite: inout TestSuite) {
-        let connection = AppServerConnectionIdentity(
-            instanceID: UUID(uuidString: "11500000-0000-4000-8000-000000000001")!,
-            generation: 115
+        let integrationID = IntegrationID(rawValue: "openai.codex")
+        let requestID = AttentionRequestID(rawValue: "phase-11.5-request")
+        let authority = AttentionResponseAuthority(
+            requestID: requestID,
+            generation: .init(
+                instanceID: UUID(
+                    uuidString: "11500000-0000-4000-8000-000000000001"
+                )!,
+                ordinal: 115
+            )
         )
-        let request = AppServerScopedRequestID(
-            connection: connection,
-            requestID: .string("phase-11.5-request")
+        let session = ConnSessionID(
+            integrationID: integrationID,
+            upstreamID: .init(rawValue: "phase-11.5-session")
         )
-        let thread = AppServerThreadID(rawValue: "phase-11.5-thread")
-        let turn = AppServerTurnID(rawValue: "phase-11.5-turn")
+        let run = RunID(rawValue: "phase-11.5-run")
         let shelf = ShellCompactShelfPresentation(
             id: "phase-11.5-shelf",
             mode: .approval,
             verb: "Approval needed",
             detail: "Exact request",
-            requestID: request,
-            threadID: thread,
-            turnID: turn,
+            responseAuthority: authority,
+            sessionID: session,
+            runID: run,
             approvalChoices: [.approve, .approveForSession, .deny]
         )
 
-        suite.checkEqual(shelf.requestID, request, "compact shelf preserves exact request authority")
-        suite.checkEqual(shelf.threadID, thread, "compact shelf preserves exact thread identity")
-        suite.checkEqual(shelf.turnID, turn, "compact shelf preserves exact turn identity")
+        suite.checkEqual(
+            shelf.responseAuthority,
+            authority,
+            "compact shelf preserves exact response authority"
+        )
+        suite.checkEqual(
+            shelf.sessionID,
+            session,
+            "compact shelf preserves exact Session identity"
+        )
+        suite.checkEqual(shelf.runID, run, "compact shelf preserves exact Run identity")
         suite.checkEqual(
             shelf.approvalChoices,
             [.approve, .approveForSession, .deny],
@@ -240,94 +156,66 @@ enum Phase115UIOverhaulTestCases {
     }
 
     private static func testAcknowledgedNewChatPlaceholder(into suite: inout TestSuite) {
-        let threadID = AppServerThreadID(rawValue: "phase-11.5-new-chat")
-        let placeholder = AppServerThreadPresentation(
-            newlyCreatedThreadID: threadID,
-            workingDirectory: "/tmp/phase-11.5",
-            now: Date(timeIntervalSince1970: 1_785_000_000)
+        let integrationID = IntegrationID(rawValue: "openai.codex")
+        let sessionID = ConnSessionID(
+            integrationID: integrationID,
+            upstreamID: .init(rawValue: "phase-11.5-new-session")
         )
-
-        suite.checkEqual(placeholder.threadID, threadID, "new-chat placeholder preserves the exact acknowledged thread")
-        suite.checkEqual(placeholder.title, "New chat", "new-chat placeholder opens the empty transcript state")
-        suite.checkEqual(placeholder.timeline, [], "new-chat placeholder never invents conversation content")
-        suite.checkEqual(placeholder.workingDirectoryLabel, "/tmp/phase-11.5", "new-chat placeholder shows the configured workspace")
-        suite.checkEqual(placeholder.freshness, .live, "exact thread/start acknowledgement is represented as current runtime-only state")
-    }
-
-    private static func testRequiredNewChatModelSelection(into suite: inout TestSuite) {
-        let options = [
-            AppServerNewThreadModelOption(
-                id: "default-id",
-                model: "gpt-default",
-                displayName: "Default",
-                detail: "",
-                isDefault: true
+        let session = ConnSession(
+            id: sessionID,
+            title: "New Session",
+            workspace: .init(canonicalPath: "/tmp/phase-11.5"),
+            origin: .conn,
+            retention: .ephemeral,
+            status: .idle,
+            updatedAt: Date(timeIntervalSince1970: 1_785_000_000)
+        )
+        let placeholder = ConnSessionPresentation(
+            state: .init(
+                session: session,
+                integration: .init(
+                    id: integrationID,
+                    harnessID: .init(rawValue: "codex"),
+                    displayName: "Codex"
+                ),
+                freshness: .live,
+                actionAvailability: .init(available: [], unavailable: [:]),
+                attention: []
             ),
-            AppServerNewThreadModelOption(
-                id: "remembered-id",
-                model: "gpt-remembered",
-                displayName: "Remembered",
-                detail: "",
-                isDefault: false
-            ),
-        ]
-        let remembered = AppServerNewThreadModelSelectionPolicy.resolve(
-            options: options,
-            currentSelectionID: nil,
-            preferredSelectionID: "remembered-id"
-        )
-        suite.checkEqual(
-            remembered.selectedID,
-            "remembered-id",
-            "new chat restores the last explicitly selected available model"
-        )
-        suite.check(
-            !remembered.preferredModelIsUnavailable,
-            "an available remembered model needs no fallback warning"
+            title: "New Session",
+            workspaceLabel: "/tmp/phase-11.5",
+            statusLabel: "Idle",
+            visualState: .idle,
+            tone: .neutral,
+            harness: .init(harnessID: .init(rawValue: "codex"), label: "Codex"),
+            activities: [],
+            attention: []
         )
 
-        let fallback = AppServerNewThreadModelSelectionPolicy.resolve(
-            options: options,
-            currentSelectionID: nil,
-            preferredSelectionID: "retired-id"
+        suite.checkEqual(
+            placeholder.id,
+            sessionID,
+            "new-Session placeholder preserves the exact acknowledged identity"
         )
         suite.checkEqual(
-            fallback.selectedID,
-            "default-id",
-            "an unavailable remembered model falls back to the current server default"
-        )
-        suite.check(
-            fallback.preferredModelIsUnavailable,
-            "fallback reports that the remembered model needs review"
-        )
-
-        let current = AppServerNewThreadModelSelectionPolicy.resolve(
-            options: options,
-            currentSelectionID: "default-id",
-            preferredSelectionID: "remembered-id"
+            placeholder.title,
+            "New Session",
+            "new-Session placeholder opens the empty activity state"
         )
         suite.checkEqual(
-            current.selectedID,
-            "default-id",
-            "a visible in-progress choice is never overwritten by preference restoration"
-        )
-    }
-
-    private static func testNewChatUsesDefaultWorkspace(into suite: inout TestSuite) {
-        suite.checkEqual(
-            AppServerNewChatWorkspacePolicy.resolveDefaultWorkspace("  /tmp/../tmp  "),
-            "/tmp",
-            "new chat standardizes the configured default workspace without prompting"
+            placeholder.activities,
+            [],
+            "new-Session placeholder never invents activity"
         )
         suite.checkEqual(
-            AppServerNewChatWorkspacePolicy.resolveDefaultWorkspace("relative/project"),
-            "relative/project",
-            "invalid relative defaults remain invalid for submit-time validation"
+            placeholder.workspaceLabel,
+            "/tmp/phase-11.5",
+            "new-Session placeholder shows the configured Workspace"
         )
         suite.checkEqual(
-            AppServerNewChatWorkspacePolicy.resolveDefaultWorkspace("   "),
-            "",
-            "an empty default is never rewritten to the process working directory"
+            placeholder.state.freshness,
+            .live,
+            "exact create acknowledgement is represented as current runtime-only state"
         )
     }
 
@@ -532,7 +420,7 @@ enum Phase115UIOverhaulTestCases {
             ShellTranscriptActivityPolicy.shouldAutoExpand(
                 isLatestActivity: true,
                 hasFollowingUserFacingText: false,
-                visualState: .running
+                visualState: .working
             ),
             "the newest activity group stays open while work is being generated"
         )
@@ -540,7 +428,7 @@ enum Phase115UIOverhaulTestCases {
             !ShellTranscriptActivityPolicy.shouldAutoExpand(
                 isLatestActivity: true,
                 hasFollowingUserFacingText: true,
-                visualState: .running
+                visualState: .working
             ),
             "the activity group collapses when its user-facing summary arrives"
         )
@@ -548,7 +436,7 @@ enum Phase115UIOverhaulTestCases {
             !ShellTranscriptActivityPolicy.shouldAutoExpand(
                 isLatestActivity: false,
                 hasFollowingUserFacingText: false,
-                visualState: .running
+                visualState: .working
             ),
             "older activity groups remain collapsed while a newer group runs"
         )

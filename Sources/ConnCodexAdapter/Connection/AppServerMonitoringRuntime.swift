@@ -823,6 +823,12 @@ public actor AppServerMonitoringRuntime {
         )
     }
 
+    public func legacyPluginCandidate() async
+        -> LegacySidequestPluginCandidate?
+    {
+        await legacyPluginRetirement.currentCandidate()
+    }
+
     package func consumeInventoryRefreshRequestForTesting() -> Bool {
         consumeInventoryRefreshRequest()
     }

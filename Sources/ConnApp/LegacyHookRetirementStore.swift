@@ -19,7 +19,7 @@ public enum LegacyHookRetirementResult: Equatable, Sendable {
 /// One-shot retirement for the two obsolete hook checkpoint roots.
 ///
 /// The paths are fixed deliberately. This type never scans Application Support,
-/// never imports legacy data, and never touches Conn/AppServerDomain.
+/// never imports legacy data, and never touches the v0.1 projection cache.
 public struct LegacyHookRetirementStore: Sendable {
     private static let legacyRoots = [
         ["Sidequest", "Bridge", "v1"],

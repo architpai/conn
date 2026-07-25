@@ -11,7 +11,7 @@ private enum ConnUITestRunner {
         Phase115CompactShelfMotionTestCases.run(into: &suite)
 
         if suite.failures.isEmpty {
-            print("V0.2 UI PARITY: 210 of 210 assertions")
+            print("V0.2 UI PARITY: 192 of 192 assertions")
             print("PASS: \(suite.assertions) assertions")
             Foundation.exit(EXIT_SUCCESS)
         }
