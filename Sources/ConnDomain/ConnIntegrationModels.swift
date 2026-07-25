@@ -309,7 +309,19 @@ public struct ConnActivity: Codable, Equatable, Identifiable, Sendable {
         self.kind = kind
         self.status = status
         self.summary = summary.map {
-            ConnDomainBounds.boundedSingleLine($0, maximumUTF8Bytes: bounds.maximumSummaryUTF8Bytes)
+            switch kind {
+            case .userMessage, .agentMessage:
+                ConnDomainBounds.boundedText(
+                    $0,
+                    maximumUTF8Bytes: bounds.maximumActionTextUTF8Bytes
+                )
+            case .plan, .reasoning, .command, .fileChange, .toolCall,
+                 .subagent, .webSearch, .image, .compaction, .unknown:
+                ConnDomainBounds.boundedSingleLine(
+                    $0,
+                    maximumUTF8Bytes: bounds.maximumSummaryUTF8Bytes
+                )
+            }
         }
         self.observedAt = observedAt
     }
@@ -837,10 +849,14 @@ public struct ConnDomainBounds: Equatable, Sendable {
             omittingEmptySubsequences: false,
             whereSeparator: \.isNewline
         ).first.map(String.init) ?? ""
-        guard firstLine.utf8.count > maximumUTF8Bytes else { return firstLine }
+        return boundedText(firstLine, maximumUTF8Bytes: maximumUTF8Bytes)
+    }
+
+    static func boundedText(_ value: String, maximumUTF8Bytes: Int) -> String {
+        guard value.utf8.count > maximumUTF8Bytes else { return value }
         var result = ""
         result.reserveCapacity(maximumUTF8Bytes)
-        for scalar in firstLine.unicodeScalars {
+        for scalar in value.unicodeScalars {
             let candidate = result + String(scalar)
             guard candidate.utf8.count <= maximumUTF8Bytes else { break }
             result = candidate

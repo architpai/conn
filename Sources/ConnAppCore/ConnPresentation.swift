@@ -60,6 +60,29 @@ public struct ConnActivityPresentation: Equatable, Identifiable, Sendable {
     }
 }
 
+public struct ConnRunPresentation: Equatable, Identifiable, Sendable {
+    public var id: RunID { run.id }
+    public let run: ConnRun
+    public let title: String
+    public let summary: String?
+    public let activities: [ConnActivityPresentation]
+    public let isCollapsedByDefault: Bool
+
+    public init(
+        run: ConnRun,
+        title: String,
+        summary: String?,
+        activities: [ConnActivityPresentation],
+        isCollapsedByDefault: Bool
+    ) {
+        self.run = run
+        self.title = title
+        self.summary = summary
+        self.activities = activities
+        self.isCollapsedByDefault = isCollapsedByDefault
+    }
+}
+
 public struct ConnAttentionPresentation: Equatable, Identifiable, Sendable {
     public var id: AttentionRequestID { state.id }
     public let state: ConnAttentionState
@@ -104,6 +127,7 @@ public struct ConnSessionPresentation: Equatable, Identifiable, Sendable {
     public let visualState: ConnSessionVisualState
     public let tone: ConnPresentationTone
     public let harness: ConnHarnessAttribution
+    public let runs: [ConnRunPresentation]
     public let activities: [ConnActivityPresentation]
     public let attention: [ConnAttentionPresentation]
 
@@ -120,6 +144,7 @@ public struct ConnSessionPresentation: Equatable, Identifiable, Sendable {
         visualState: ConnSessionVisualState,
         tone: ConnPresentationTone,
         harness: ConnHarnessAttribution,
+        runs: [ConnRunPresentation] = [],
         activities: [ConnActivityPresentation],
         attention: [ConnAttentionPresentation]
     ) {
@@ -130,6 +155,7 @@ public struct ConnSessionPresentation: Equatable, Identifiable, Sendable {
         self.visualState = visualState
         self.tone = tone
         self.harness = harness
+        self.runs = runs
         self.activities = activities
         self.attention = attention
     }
@@ -249,6 +275,10 @@ public enum ConnPresentationBuilder {
         case .stale: .stale
         case .idle, .unknown: .neutral
         }
+        let activities = state.session.activities.map(activity)
+        let activitiesByRun = Dictionary(grouping: activities) {
+            $0.activity.runID
+        }
         return .init(
             state: state,
             title: state.session.title?.nonEmpty ?? "Untitled Session",
@@ -263,7 +293,19 @@ public enum ConnPresentationBuilder {
                 label: state.integration.displayName,
                 assetName: harnessAssets[state.integration.harnessID]
             ),
-            activities: state.session.activities.map(activity),
+            runs: state.session.runs.map { run in
+                let runActivities = activitiesByRun[run.id] ?? []
+                return .init(
+                    run: run,
+                    title: runTitle(run.status),
+                    summary: runActivities.last {
+                        $0.activity.kind == .agentMessage
+                    }?.detail,
+                    activities: runActivities,
+                    isCollapsedByDefault: run.status == .completed
+                )
+            },
+            activities: activities,
             attention: state.attention.map {
                 .init(
                     state: $0,
@@ -273,6 +315,16 @@ public enum ConnPresentationBuilder {
                 )
             }
         )
+    }
+
+    private static func runTitle(_ status: ConnRunStatus) -> String {
+        switch status {
+        case .inProgress: "Current Run"
+        case .completed: "Completed Run"
+        case .interrupted: "Interrupted Run"
+        case .failed: "Failed Run"
+        case .unknown: "Run"
+        }
     }
 
     private static func visualState(

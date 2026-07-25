@@ -17,6 +17,77 @@ enum Phase4NeutralAggregationTestCases {
         try await restoredStateIsNonActionable(into: &suite)
         try twoSlotStoreRecoversLastValidGeneration(into: &suite)
         neutralPresentationPoliciesUseOnlySemanticState(into: &suite)
+        completedRunsCompressAroundTheirFullAnswer(into: &suite)
+    }
+
+    private static func completedRunsCompressAroundTheirFullAnswer(
+        into suite: inout TestSuite
+    ) {
+        let sessionID = ConnSessionID(
+            integrationID: codexID,
+            upstreamID: .init(rawValue: "completed-run-presentation")
+        )
+        let runID = RunID(rawValue: "completed-run")
+        let fullAnswer = "First answer line.\nSecond answer line."
+        let session = ConnSession(
+            id: sessionID,
+            title: "Completed run presentation",
+            status: .completed,
+            runs: [.init(id: runID, status: .completed)],
+            activities: [
+                .init(
+                    id: .init(rawValue: "completed-run:user"),
+                    runID: runID,
+                    kind: .userMessage,
+                    status: .completed,
+                    summary: "Question",
+                    observedAt: at(1)
+                ),
+                .init(
+                    id: .init(rawValue: "completed-run:answer"),
+                    runID: runID,
+                    kind: .agentMessage,
+                    status: .completed,
+                    summary: fullAnswer,
+                    observedAt: at(2)
+                ),
+            ],
+            updatedAt: at(2)
+        )
+        let descriptor = IntegrationDescriptor(
+            id: codexID,
+            harnessID: .init(rawValue: "openai"),
+            displayName: "OpenAI"
+        )
+        let state = ConnSessionState(
+            session: session,
+            integration: descriptor,
+            freshness: .live,
+            actionAvailability: .init(available: [], unavailable: [:]),
+            attention: []
+        )
+        let domain = ConnAggregateSnapshot(
+            revision: 1,
+            integrations: [],
+            sessions: [state],
+            projects: [],
+            persistenceHealth: .healthy
+        )
+        let presentation = ConnPresentationBuilder.make(domain)
+        suite.checkEqual(
+            presentation.sessions.first?.runs.first?.summary,
+            fullAnswer,
+            "completed Run presentation preserves the full multiline answer"
+        )
+        suite.check(
+            presentation.sessions.first?.runs.first?.isCollapsedByDefault == true,
+            "completed Runs default to a compressed presentation"
+        )
+        suite.checkEqual(
+            presentation.sessions.first?.runs.first?.activities.count,
+            2,
+            "Run presentation groups its complete chronological Activity sequence"
+        )
     }
 
     private static func simultaneousIntegrationsRemainIsolated(

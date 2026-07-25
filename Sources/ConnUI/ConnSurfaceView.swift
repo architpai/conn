@@ -3,9 +3,70 @@ import ConnAppCore
 import ConnDomain
 import SwiftUI
 
+private struct ConnChatBubbleShape: Shape {
+    enum Tail {
+        case leading
+        case trailing
+    }
+
+    let tail: Tail
+
+    func path(in rect: CGRect) -> Path {
+        let tailWidth: CGFloat = 7
+        let body = switch tail {
+        case .leading:
+            CGRect(
+                x: rect.minX + tailWidth,
+                y: rect.minY,
+                width: max(0, rect.width - tailWidth),
+                height: rect.height
+            )
+        case .trailing:
+            CGRect(
+                x: rect.minX,
+                y: rect.minY,
+                width: max(0, rect.width - tailWidth),
+                height: rect.height
+            )
+        }
+        var path = Path(
+            roundedRect: body,
+            cornerRadius: 14,
+            style: .continuous
+        )
+        let tailTop = max(body.minY + 14, body.maxY - 18)
+        let tailBottom = body.maxY - 4
+        switch tail {
+        case .leading:
+            path.move(to: CGPoint(x: body.minX + 2, y: tailTop))
+            path.addQuadCurve(
+                to: CGPoint(x: rect.minX, y: tailBottom),
+                control: CGPoint(x: body.minX, y: tailBottom - 4)
+            )
+            path.addLine(to: CGPoint(x: body.minX + 10, y: tailBottom - 1))
+            path.closeSubpath()
+        case .trailing:
+            path.move(to: CGPoint(x: body.maxX - 2, y: tailTop))
+            path.addQuadCurve(
+                to: CGPoint(x: rect.maxX, y: tailBottom),
+                control: CGPoint(x: body.maxX, y: tailBottom - 4)
+            )
+            path.addLine(to: CGPoint(x: body.maxX - 10, y: tailBottom - 1))
+            path.closeSubpath()
+        }
+        return path
+    }
+}
+
+private struct ConnRunExpansionKey: Hashable {
+    let sessionID: ConnSessionID
+    let runID: RunID
+}
+
 public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
     @ObservedObject private var model: ConnViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var runExpansion: [ConnRunExpansionKey: Bool] = [:]
     private let integrationSettingsContent: () -> IntegrationSettingsContent
 
     public init(
@@ -283,7 +344,12 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                             )
                             .padding(.top, 80)
                         } else {
-                            ForEach(session.activities) { activity in
+                            ForEach(session.runs) { run in
+                                runRow(run, sessionID: session.id)
+                            }
+                            ForEach(session.activities.filter {
+                                $0.activity.runID == nil
+                            }) { activity in
                                 activityRow(activity)
                             }
                         }
@@ -303,6 +369,67 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private func runRow(
+        _ run: ConnRunPresentation,
+        sessionID: ConnSessionID
+    ) -> some View {
+        let expansionKey = ConnRunExpansionKey(
+            sessionID: sessionID,
+            runID: run.id
+        )
+        let isExpanded = Binding(
+            get: {
+                runExpansion[expansionKey] ?? !run.isCollapsedByDefault
+            },
+            set: { runExpansion[expansionKey] = $0 }
+        )
+        return DisclosureGroup(isExpanded: isExpanded) {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                ForEach(run.activities) { activity in
+                    activityRow(activity)
+                }
+            }
+            .padding(.top, 10)
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 7) {
+                    Image(systemName: run.isCollapsedByDefault
+                        ? "checkmark.circle.fill"
+                        : "waveform.path")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(
+                            run.isCollapsedByDefault ? .green : .secondary
+                        )
+                    Text(run.title)
+                        .font(.system(size: 10.5, weight: .semibold))
+                    Spacer(minLength: 0)
+                    Text(
+                        run.activities.count == 1
+                            ? "1 item"
+                            : "\(run.activities.count) items"
+                    )
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.secondary)
+                }
+                if !isExpanded.wrappedValue, let summary = run.summary {
+                    Text(summary)
+                        .font(.system(size: 12))
+                        .lineSpacing(2)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 9)
+            .background(
+                Color.white.opacity(0.03),
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
+        }
+        .tint(.secondary)
     }
 
     private func sessionHeader(_ session: ConnSessionPresentation) -> some View {
@@ -333,12 +460,16 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             for: item.activity.kind
         )
         let isUser = lane == .trailing
+        let style = ConnTranscriptPresentationPolicy.style(
+            for: item.activity.kind
+        )
+        let isSpeech = style != .activityCard
         return HStack(alignment: .top, spacing: 0) {
             if isUser {
                 Spacer(minLength: 72)
             }
             HStack(alignment: .top, spacing: 10) {
-                if !isUser {
+                if !isUser && !isSpeech {
                     activityIcon(item)
                 }
                 VStack(
@@ -346,7 +477,8 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                     spacing: 4
                 ) {
                     Text(item.label)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
                     if let detail = item.detail {
                         Text(detail)
                             .font(.system(size: 12))
@@ -356,16 +488,17 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                             .textSelection(.enabled)
                     }
                 }
-                if isUser {
+                if isUser && !isSpeech {
                     activityIcon(item)
                 }
             }
-            .padding(10)
+            .padding(.horizontal, isSpeech ? 13 : 10)
+            .padding(.vertical, isSpeech ? 9 : 10)
             .background(
                 isUser
-                    ? Color.accentColor.opacity(0.14)
-                    : Color.white.opacity(0.035),
-                in: RoundedRectangle(cornerRadius: 10)
+                    ? Color.accentColor.opacity(0.18)
+                    : Color.white.opacity(isSpeech ? 0.07 : 0.035),
+                in: activityShape(style)
             )
             .accessibilityElement(children: .combine)
             if !isUser {
@@ -373,6 +506,17 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func activityShape(_ style: ConnTranscriptStyle) -> AnyShape {
+        switch style {
+        case .incomingBubble:
+            AnyShape(ConnChatBubbleShape(tail: .leading))
+        case .outgoingBubble:
+            AnyShape(ConnChatBubbleShape(tail: .trailing))
+        case .activityCard:
+            AnyShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
     }
 
     private func activityIcon(

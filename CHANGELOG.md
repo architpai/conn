@@ -50,6 +50,10 @@ Continued alpha release.
   reasoning, and tool activity use the leading lane.
 - The compact Conn bar now uses the same full-width toggle target as the
   expanded bar.
+- User and Harness messages now use directional speech bubbles while reasoning,
+  tool calls, and other operational Activities remain distinct cards.
+- Completed Runs collapse into provider-neutral summary blocks and expand to
+  reveal their complete chronological Activity sequence.
 
 ### Fixed
 
@@ -61,6 +65,8 @@ Continued alpha release.
   revalidate it against the current Codex App Server catalog before sending.
 - Show the current Session's actual model and reasoning effort instead of the
   ambiguous `Current model` placeholder.
+- Preserve multiline user and Harness message content through the neutral
+  Domain and show the full Harness answer in a completed Run summary.
 
 ### Known limitations
 

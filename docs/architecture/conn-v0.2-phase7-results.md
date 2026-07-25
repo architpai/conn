@@ -2,7 +2,7 @@
 
 Status: Offline gate complete; live acceptance and public release pending.
 
-The local candidate is Conn `0.2.0` build `11`, a continued Alpha release.
+The local candidate is Conn `0.2.0` build `12`, a continued Alpha release.
 Codex is the only supported Harness. Claude Code, Pi, OpenCode, and other
 Harness adapters are not included.
 
@@ -11,8 +11,8 @@ Harness adapters are not included.
 The following pass on 2026-07-25:
 
 - `swift build`;
-- all four required owner executables: 1,469 Codex-adapter assertions, 71
-  Domain assertions, 217 AppCore assertions, and 211 UI assertions;
+- all four required owner executables: 1,469 Codex-adapter assertions, 72
+  Domain assertions, 220 AppCore assertions, and 214 UI assertions;
 - 14 ConnApp migration-edge assertions;
 - provider-boundary and schema-provenance verification;
 - release-inspection self-tests;
@@ -25,7 +25,7 @@ The built candidate is:
 ```text
 .build/conn-app/Conn.app
 CFBundleShortVersionString = 0.2.0
-CFBundleVersion = 11
+CFBundleVersion = 12
 signature = local ad-hoc
 notarization = not claimed
 ```
@@ -99,6 +99,14 @@ live catalog, and sends `reasoning_effort` only through the reviewed
 `turn/start` field. The UI presents Model and Reasoning as independent menus,
 restores user-right and Harness-left transcript lanes, and makes the entire
 compact bar an expansion target.
+
+Build 12 restores conversational transcript hierarchy without crossing the
+provider-neutral boundary. User and Harness messages use directional speech
+bubbles, while operational Activities retain card treatment. Completed Runs
+default to collapsed summary blocks derived from their last Harness message
+and expand to their chronological Activities. Conversational content now
+preserves multiline text through the Domain's bounded action-text limit, so a
+completed Run summary is no longer reduced to its first line.
 
 ## Required manual acceptance
 

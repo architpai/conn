@@ -10,3 +10,21 @@ public enum ConnTranscriptAlignmentPolicy {
         kind == .userMessage ? .trailing : .leading
     }
 }
+
+public enum ConnTranscriptStyle: Equatable, Sendable {
+    case incomingBubble
+    case outgoingBubble
+    case activityCard
+}
+
+public enum ConnTranscriptPresentationPolicy {
+    public static func style(for kind: ConnActivityKind) -> ConnTranscriptStyle {
+        switch kind {
+        case .userMessage: .outgoingBubble
+        case .agentMessage: .incomingBubble
+        case .plan, .reasoning, .command, .fileChange, .toolCall, .subagent,
+             .webSearch, .image, .compaction, .unknown:
+            .activityCard
+        }
+    }
+}

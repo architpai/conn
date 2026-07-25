@@ -24,6 +24,7 @@ enum Phase2ConnIntegrationTestCases {
     static func run(into suite: inout TestSuite) async throws {
         identityIsIntegrationScoped(into: &suite)
         optionalRunsAndUnknownActivitiesStayBounded(into: &suite)
+        conversationalActivitiesPreserveMultilineContent(into: &suite)
         completeAndPartialInventoriesHaveDifferentAuthority(into: &suite)
         orderingAndGenerationLossFailConservatively(into: &suite)
         malformedNeutralStateIsRejected(into: &suite)
@@ -33,6 +34,23 @@ enum Phase2ConnIntegrationTestCases {
         try checkpointValidationRejectsUnsafeState(into: &suite)
         try await atomicFeedDeliversPostWatermarkUpdateExactlyOnce(into: &suite)
         try await syntheticIntegrationProvesMonitorOnlySeam(into: &suite)
+    }
+
+    private static func conversationalActivitiesPreserveMultilineContent(
+        into suite: inout TestSuite
+    ) {
+        let content = "First answer line.\nSecond answer line."
+        let activity = ConnActivity(
+            id: .init(rawValue: "multiline-agent-message"),
+            kind: .agentMessage,
+            status: .completed,
+            summary: content,
+            observedAt: at(4)
+        )
+        suite.check(
+            activity.summary == content,
+            "conversational Activity content remains multiline"
+        )
     }
 
     private static func sessionCreationPreservesSelectedModel(

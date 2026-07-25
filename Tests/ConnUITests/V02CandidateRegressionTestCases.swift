@@ -108,7 +108,21 @@ enum V02CandidateRegressionTestCases {
             .leading,
             "Agent reasoning remains grouped in the leading lane"
         )
-
+        suite.checkEqual(
+            ConnTranscriptPresentationPolicy.style(for: .userMessage),
+            .outgoingBubble,
+            "User messages use outgoing chat bubbles"
+        )
+        suite.checkEqual(
+            ConnTranscriptPresentationPolicy.style(for: .agentMessage),
+            .incomingBubble,
+            "Agent messages use incoming chat bubbles"
+        )
+        suite.checkEqual(
+            ConnTranscriptPresentationPolicy.style(for: .toolCall),
+            .activityCard,
+            "Tool activity remains visually distinct from speech"
+        )
         var sleepCount = 0
         var expiredIDs: [String] = []
         let lifetime = ConnCompactNotificationLifetimeController { _ in
