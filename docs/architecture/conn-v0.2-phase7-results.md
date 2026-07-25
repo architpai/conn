@@ -2,7 +2,7 @@
 
 Status: Offline gate complete; live acceptance and public release pending.
 
-The local candidate is Conn `0.2.0` build `7`, a continued Alpha release.
+The local candidate is Conn `0.2.0` build `8`, a continued Alpha release.
 Codex is the only supported Harness. Claude Code, Pi, OpenCode, and other
 Harness adapters are not included.
 
@@ -25,7 +25,7 @@ The built candidate is:
 ```text
 .build/conn-app/Conn.app
 CFBundleShortVersionString = 0.2.0
-CFBundleVersion = 7
+CFBundleVersion = 8
 signature = local ad-hoc
 notarization = not claimed
 ```
@@ -73,6 +73,11 @@ now emits oldest-first Run blocks while retaining each Turn's authoritative
 Item order. This avoids the incorrect flat-array reversal that would put tool
 calls, reasoning, and assistant messages ahead of the user message that caused
 them.
+
+Build 8 restores the full expanded-header collapse target that was lost in the
+Phase 5 view rewrite. A background Button fills unused bar space beneath the
+existing logo, New Session, and Settings controls, so the natural bar-click
+gesture collapses Conn without intercepting those controls.
 
 ## Required manual acceptance
 

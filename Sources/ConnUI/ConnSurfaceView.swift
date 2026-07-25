@@ -83,71 +83,84 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             surface: model.surfaceState,
             placement: model.panelPlacement
         )
-        return HStack(spacing: 10) {
-            Button {
-                model.onToggleExpansion?()
-            } label: {
-                HStack(spacing: 7) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .frame(width: 22, height: 22)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    if presentation.showsProductName {
-                        Text("CONN")
-                            .font(.system(size: 11, weight: .black, design: .rounded))
-                            .tracking(1.2)
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(model.isExpanded ? "Collapse Conn" : "Expand Conn")
-
-            if presentation.showsIntegrationStatus {
-                if let integration = model.integrations.first {
-                    Circle()
-                        .fill(toneColor(integration.tone))
-                        .frame(width: 7, height: 7)
-                        .accessibilityHidden(true)
-                    Text(integration.statusLabel)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Connecting")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer(minLength: presentation.minimumCenterGap)
-
-            if model.activeCount > 0 {
-                metric("\(model.activeCount)", label: "active Sessions", color: .mint)
-            }
-            if model.attentionCount > 0 {
-                metric("\(model.attentionCount)", label: "Attention Requests", color: .orange)
-            }
-
+        return ZStack {
             if model.isExpanded {
                 Button {
-                    model.showsNewSessionComposer.toggle()
+                    model.onToggleExpansion?()
                 } label: {
-                    Image(systemName: "plus")
+                    Color.clear
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(ChromeButtonStyle())
-                .help("New Session")
-                .accessibilityLabel("Create a new Session")
-
-                Button {
-                    model.showsSettings.toggle()
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .buttonStyle(ChromeButtonStyle())
-                .help("Settings")
-                .accessibilityLabel("Open Conn settings")
+                .buttonStyle(.plain)
+                .accessibilityHidden(true)
             }
+
+            HStack(spacing: 10) {
+                Button {
+                    model.onToggleExpansion?()
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(nsImage: NSApp.applicationIconImage)
+                            .resizable()
+                            .frame(width: 22, height: 22)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        if presentation.showsProductName {
+                            Text("CONN")
+                                .font(.system(size: 11, weight: .black, design: .rounded))
+                                .tracking(1.2)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(model.isExpanded ? "Collapse Conn" : "Expand Conn")
+
+                if presentation.showsIntegrationStatus {
+                    if let integration = model.integrations.first {
+                        Circle()
+                            .fill(toneColor(integration.tone))
+                            .frame(width: 7, height: 7)
+                            .accessibilityHidden(true)
+                        Text(integration.statusLabel)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Connecting")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer(minLength: presentation.minimumCenterGap)
+
+                if model.activeCount > 0 {
+                    metric("\(model.activeCount)", label: "active Sessions", color: .mint)
+                }
+                if model.attentionCount > 0 {
+                    metric("\(model.attentionCount)", label: "Attention Requests", color: .orange)
+                }
+
+                if model.isExpanded {
+                    Button {
+                        model.showsNewSessionComposer.toggle()
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(ChromeButtonStyle())
+                    .help("New Session")
+                    .accessibilityLabel("Create a new Session")
+
+                    Button {
+                        model.showsSettings.toggle()
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .buttonStyle(ChromeButtonStyle())
+                    .help("Settings")
+                    .accessibilityLabel("Open Conn settings")
+                }
+            }
+            .padding(.horizontal, 12)
         }
-        .padding(.horizontal, 12)
         .frame(height: 40)
     }
 

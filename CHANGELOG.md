@@ -38,6 +38,8 @@ Continued alpha release.
   external displays retain the full compact status wording.
 - Session history now presents Turns oldest-first while preserving canonical
   user, reasoning, tool, and assistant Item order inside each Turn.
+- Clicking unused space in the expanded Conn header now collapses the surface
+  without stealing clicks from its embedded controls.
 
 ### Fixed
 
