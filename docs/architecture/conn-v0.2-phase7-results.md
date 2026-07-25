@@ -2,7 +2,7 @@
 
 Status: Offline gate complete; live acceptance and public release pending.
 
-The local candidate is Conn `0.2.0` build `9`, a continued Alpha release.
+The local candidate is Conn `0.2.0` build `10`, a continued Alpha release.
 Codex is the only supported Harness. Claude Code, Pi, OpenCode, and other
 Harness adapters are not included.
 
@@ -11,7 +11,7 @@ Harness adapters are not included.
 The following pass on 2026-07-25:
 
 - `swift build`;
-- all four required owner executables: 1,469 Codex-adapter assertions, 67
+- all four required owner executables: 1,469 Codex-adapter assertions, 69
   Domain assertions, 217 AppCore assertions, and 208 UI assertions;
 - 14 ConnApp migration-edge assertions;
 - provider-boundary and schema-provenance verification;
@@ -25,7 +25,7 @@ The built candidate is:
 ```text
 .build/conn-app/Conn.app
 CFBundleShortVersionString = 0.2.0
-CFBundleVersion = 9
+CFBundleVersion = 10
 signature = local ad-hoc
 notarization = not claimed
 ```
@@ -83,6 +83,13 @@ Build 9 pairs chronological history with newest-tail opening. Expanding Conn or
 switching Sessions creates a Session-scoped transcript viewport whose default
 anchor is the bottom. Ordinary Activity refreshes retain that viewport identity
 so someone reading older history is not forced back to the tail.
+
+Build 10 restores model selection in both creation and follow-up composers. The
+neutral Domain transports only an opaque Integration-owned model ID; the Codex
+adapter supplies bounded picker labels and revalidates the selected ID against
+the current live App Server catalog before any consequential send. Active Runs
+retain their current model because model overrides are disabled while Conn is
+steering.
 
 ## Required manual acceptance
 

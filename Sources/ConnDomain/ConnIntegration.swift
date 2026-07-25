@@ -107,10 +107,15 @@ public struct ConnIntegrationFeed: Sendable {
 public protocol ConnIntegration: Sendable {
     var descriptor: IntegrationDescriptor { get }
     func establishFeed() async throws(ConnIntegrationError) -> ConnIntegrationFeed
+    func sessionModels() async -> ConnSessionModelCatalogResult
     func perform(_ action: ConnAction) async -> ConnActionOutcome
     func disconnect() async
 }
 
 public extension ConnIntegration {
+    func sessionModels() async -> ConnSessionModelCatalogResult {
+        .init(outcome: .unavailable)
+    }
+
     func disconnect() async {}
 }

@@ -29,9 +29,44 @@ enum Phase2ConnIntegrationTestCases {
         malformedNeutralStateIsRejected(into: &suite)
         actionAvailabilityNeedsLocalCapabilityAndAuthority(into: &suite)
         try actionPayloadsRejectLossyBounds(into: &suite)
+        try sessionCreationPreservesSelectedModel(into: &suite)
         try checkpointValidationRejectsUnsafeState(into: &suite)
         try await atomicFeedDeliversPostWatermarkUpdateExactlyOnce(into: &suite)
         try await syntheticIntegrationProvesMonitorOnlySeam(into: &suite)
+    }
+
+    private static func sessionCreationPreservesSelectedModel(
+        into suite: inout TestSuite
+    ) throws {
+        let selectedModelID = ConnSessionModelID(rawValue: "model-option-1")
+        let action = ConnAction.createSession(
+            integrationID: codexIntegration,
+            workspacePath: try ConnWorkspacePath("/tmp/project"),
+            initialPrompt: try ConnActionText("Start here"),
+            modelID: selectedModelID
+        )
+        if case let .createSession(_, _, _, modelID) = action {
+            suite.check(
+                modelID == selectedModelID,
+                "Session creation preserves the provider-neutral selected model ID"
+            )
+        } else {
+            suite.check(false, "Session creation remains a create action")
+        }
+
+        let followUp = ConnAction.followUp(
+            sessionID: codexSessionID,
+            text: try ConnActionText("Continue"),
+            modelID: selectedModelID
+        )
+        if case let .followUp(_, _, modelID) = followUp {
+            suite.check(
+                modelID == selectedModelID,
+                "Follow-up preserves the optional provider-neutral model override"
+            )
+        } else {
+            suite.check(false, "Follow-up remains a follow-up action")
+        }
     }
 
     private static func identityIsIntegrationScoped(into suite: inout TestSuite) {

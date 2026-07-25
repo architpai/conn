@@ -184,6 +184,9 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                 newSessionComposer
             }
         }
+        .onAppear {
+            model.loadSessionModels()
+        }
     }
 
     private var sidebar: some View {
@@ -423,7 +426,12 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
     }
 
     private func composer(_ session: ConnSessionPresentation) -> some View {
-        VStack(spacing: 7) {
+        let canOverrideModel =
+            session.state.actionAvailability.supports(.followUp)
+                && !session.state.session.runs.contains {
+                    $0.status == .inProgress
+                }
+        return VStack(spacing: 7) {
             if let error = model.actionError {
                 Text(error)
                     .font(.system(size: 10))
@@ -436,6 +444,28 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(spacing: 8) {
+                Picker(
+                    "Model",
+                    selection: $model.selectedFollowUpModelID
+                ) {
+                    Text("Current model").tag(Optional<ConnSessionModelID>.none)
+                    ForEach(model.sessionModelOptions) { option in
+                        Text(option.displayName).tag(Optional(option.id))
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 150)
+                .disabled(
+                    model.isLoadingSessionModels
+                        || !canOverrideModel
+                )
+                .accessibilityLabel("Model for next message")
+                .help(
+                    canOverrideModel
+                        ? "Use the current model or override the next follow-up."
+                        : "Model changes are available when this Session is idle."
+                )
                 TextField("Follow up or steer…", text: $model.composerText)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { model.submitComposer() }
@@ -512,6 +542,43 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             VStack(alignment: .leading, spacing: 12) {
                 TextField("Workspace path", text: $model.newSessionWorkspace)
                     .textFieldStyle(.roundedBorder)
+                HStack {
+                    if model.sessionModelOptions.isEmpty {
+                        Button {
+                            model.loadSessionModels()
+                        } label: {
+                            if model.isLoadingSessionModels {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label("Retry models", systemImage: "arrow.clockwise")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.isLoadingSessionModels)
+                    } else {
+                        Picker(
+                            "Model",
+                            selection: $model.selectedNewSessionModelID
+                        ) {
+                            ForEach(model.sessionModelOptions) { option in
+                                Text(option.displayName).tag(Optional(option.id))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .accessibilityLabel("Model for new Session")
+                        .help(
+                            model.sessionModelOptions.first(where: {
+                                $0.id == model.selectedNewSessionModelID
+                            })?.detail ?? "Model for the first message"
+                        )
+                    }
+                    Spacer()
+                }
+                if let modelError = model.sessionModelError {
+                    Text(modelError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
                 TextEditor(text: $model.newSessionPrompt)
                     .font(.system(size: 12))
                     .frame(minHeight: 120)
@@ -523,7 +590,10 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                         model.createSession()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(model.isPerformingAction)
+                    .disabled(
+                        model.isPerformingAction
+                            || model.selectedNewSessionModelID == nil
+                    )
                 }
             }
         }
@@ -531,6 +601,7 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             if model.newSessionWorkspace.isEmpty {
                 model.newSessionWorkspace = model.defaultWorkspace
             }
+            model.loadSessionModels()
         }
     }
 

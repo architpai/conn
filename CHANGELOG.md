@@ -42,6 +42,8 @@ Continued alpha release.
   without stealing clicks from its embedded controls.
 - Chronological Session history now opens at its newest tail and resets to the
   tail when switching Sessions.
+- Model selection is restored for new Sessions and idle follow-ups through a
+  provider-neutral, Integration-supplied model catalog.
 
 ### Fixed
 
@@ -49,6 +51,8 @@ Continued alpha release.
   while retaining menu-bar clearance on external displays.
 - Make every Shared Desktop diagnosis visibly confirm completion, show the
   bounded host-version tuple, and explain when the tuple is candidate-only.
+- Preserve the selected opaque model ID across Conn's action boundary and
+  revalidate it against the current Codex App Server catalog before sending.
 
 ### Known limitations
 

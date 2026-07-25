@@ -123,13 +123,14 @@ public actor CodexIntegration: ConnIntegration {
                 "Opening Codex is composed by ConnApp, not an App Server action"
             )
 
-        case let .createSession(_, workspacePath, initialPrompt):
+        case let .createSession(_, workspacePath, initialPrompt, modelID):
             let catalog = await runtime.loadNewThreadModelCatalog()
             guard catalog.outcome == .available,
-                  let optionID = catalog.catalog?.defaultOptionID,
-                  let option = catalog.catalog?.options.first(where: { $0.id == optionID })
+                  let option = catalog.catalog?.options.first(where: {
+                      $0.id == modelID.rawValue
+                  })
             else {
-                return outcome(for: action, .unavailable, "Codex model catalog unavailable")
+                return outcome(for: action, .invalidated, "Selected Codex model is unavailable")
             }
             await prepareDispatch(runtime)
             let result = await runtime.executeNewThread(.init(
@@ -144,11 +145,29 @@ public actor CodexIntegration: ConnIntegration {
             }
             return outcome(for: action, result.outcome)
 
-        case let .followUp(sessionID, text):
+        case let .followUp(sessionID, text, modelID):
+            let selectedModel: String?
+            if let modelID {
+                let catalog = await runtime.loadNewThreadModelCatalog()
+                guard catalog.outcome == .available,
+                      let option = catalog.catalog?.options.first(where: {
+                          $0.id == modelID.rawValue
+                      }) else {
+                    return outcome(
+                        for: action,
+                        .invalidated,
+                        "Selected Codex model is unavailable"
+                    )
+                }
+                selectedModel = option.model
+            } else {
+                selectedModel = nil
+            }
             return await execute(
                 .followUp(
                     threadID: threadID(sessionID),
                     text: text.value,
+                    model: selectedModel,
                     draftRevision: actionGeneration
                 ),
                 action: action,
@@ -211,6 +230,34 @@ public actor CodexIntegration: ConnIntegration {
                 runtime: runtime
             )
         }
+    }
+
+    public func sessionModels() async -> ConnSessionModelCatalogResult {
+        guard let runtime else {
+            return .init(outcome: .unavailable)
+        }
+        let result = await runtime.loadNewThreadModelCatalog()
+        guard result.outcome == .available, let catalog = result.catalog else {
+            return .init(
+                outcome: result.outcome == .connectionInvalidated
+                    ? .invalidated
+                    : .unavailable
+            )
+        }
+        return .init(
+            outcome: .available,
+            catalog: .init(
+                integrationID: descriptor.id,
+                options: catalog.options.map {
+                    .init(
+                        id: .init(rawValue: $0.id),
+                        displayName: $0.displayName,
+                        detail: $0.detail.isEmpty ? nil : $0.detail,
+                        isDefault: $0.isDefault
+                    )
+                }
+            )
+        )
     }
 
     /// Migration-edge inspection for the exact retired Sidequest plugin.

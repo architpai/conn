@@ -61,6 +61,14 @@ public struct SessionIssueID: RawRepresentable, Codable, Hashable, Comparable, S
     public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
+/// Opaque, Integration-owned identity for one model offered when creating a
+/// Session. Conn never interprets this value or persists provider model names.
+public struct ConnSessionModelID: RawRepresentable, Hashable, Comparable, Sendable {
+    public let rawValue: String
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+}
+
 // MARK: - Runtime authority
 
 /// Authority for exactly one live Integration connection. It is deliberately
@@ -517,6 +525,70 @@ public struct ConnWorkspacePath: Equatable, Sendable {
     }
 }
 
+public struct ConnSessionModelOption: Equatable, Identifiable, Sendable {
+    public let id: ConnSessionModelID
+    public let displayName: String
+    public let detail: String?
+    public let isDefault: Bool
+
+    public init(
+        id: ConnSessionModelID,
+        displayName: String,
+        detail: String? = nil,
+        isDefault: Bool,
+        bounds: ConnDomainBounds = .default
+    ) {
+        self.id = id
+        self.displayName = ConnDomainBounds.boundedSingleLine(
+            displayName,
+            maximumUTF8Bytes: bounds.maximumTitleUTF8Bytes
+        )
+        self.detail = detail.map {
+            ConnDomainBounds.boundedSingleLine(
+                $0,
+                maximumUTF8Bytes: bounds.maximumSummaryUTF8Bytes
+            )
+        }
+        self.isDefault = isDefault
+    }
+}
+
+public struct ConnSessionModelCatalog: Equatable, Sendable {
+    public let integrationID: IntegrationID
+    public let options: [ConnSessionModelOption]
+
+    public init(
+        integrationID: IntegrationID,
+        options: [ConnSessionModelOption]
+    ) {
+        self.integrationID = integrationID
+        self.options = options
+    }
+
+    public var defaultOptionID: ConnSessionModelID? {
+        options.first(where: \.isDefault)?.id ?? options.first?.id
+    }
+}
+
+public enum ConnSessionModelCatalogOutcome: Equatable, Sendable {
+    case available
+    case unavailable
+    case invalidated
+}
+
+public struct ConnSessionModelCatalogResult: Equatable, Sendable {
+    public let outcome: ConnSessionModelCatalogOutcome
+    public let catalog: ConnSessionModelCatalog?
+
+    public init(
+        outcome: ConnSessionModelCatalogOutcome,
+        catalog: ConnSessionModelCatalog? = nil
+    ) {
+        self.outcome = outcome
+        self.catalog = catalog
+    }
+}
+
 /// Runtime-only structured answers. It is intentionally not Codable and
 /// rejects rather than truncates values that would change the user's answer.
 public struct ConnStructuredAnswers: Equatable, Sendable {
@@ -558,9 +630,14 @@ public enum ConnAction: Equatable, Sendable {
     case createSession(
         integrationID: IntegrationID,
         workspacePath: ConnWorkspacePath,
-        initialPrompt: ConnActionText
+        initialPrompt: ConnActionText,
+        modelID: ConnSessionModelID
     )
-    case followUp(sessionID: ConnSessionID, text: ConnActionText)
+    case followUp(
+        sessionID: ConnSessionID,
+        text: ConnActionText,
+        modelID: ConnSessionModelID? = nil
+    )
     case steer(sessionID: ConnSessionID, runID: RunID, text: ConnActionText)
     case interrupt(sessionID: ConnSessionID, runID: RunID)
     case answer(
@@ -588,10 +665,10 @@ public enum ConnAction: Equatable, Sendable {
 
     public var integrationID: IntegrationID {
         switch self {
-        case let .createSession(integrationID, _, _):
+        case let .createSession(integrationID, _, _, _):
             integrationID
         case let .open(sessionID),
-             let .followUp(sessionID, _),
+             let .followUp(sessionID, _, _),
              let .steer(sessionID, _, _),
              let .interrupt(sessionID, _),
              let .answer(sessionID, _, _),

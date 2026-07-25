@@ -37,8 +37,14 @@ public final class ConnViewModel: ObservableObject {
     @Published public private(set) var actionError: String?
     @Published public private(set) var isPerformingAction = false
     @Published public var composerText = ""
+    @Published public var selectedFollowUpModelID: ConnSessionModelID?
     @Published public var newSessionWorkspace = ""
     @Published public var newSessionPrompt = ""
+    @Published public private(set) var sessionModelOptions:
+        [ConnSessionModelOption] = []
+    @Published public var selectedNewSessionModelID: ConnSessionModelID?
+    @Published public private(set) var isLoadingSessionModels = false
+    @Published public private(set) var sessionModelError: String?
     @Published public private(set) var compactNotificationBatch:
         ConnUserFacingNotificationBatch?
     @Published private var questionDrafts: [AttentionRequestID: [String: String]] = [:]
@@ -148,6 +154,7 @@ public final class ConnViewModel: ObservableObject {
         guard sessions.contains(where: { $0.id == sessionID }) else { return }
         selectedSessionID = sessionID
         showsSessionPicker = false
+        selectedFollowUpModelID = nil
         actionError = nil
         actionNotice = nil
     }
@@ -186,7 +193,11 @@ public final class ConnViewModel: ObservableObject {
                 text: text
             )
         } else {
-            action = .followUp(sessionID: selected.id, text: text)
+            action = .followUp(
+                sessionID: selected.id,
+                text: text,
+                modelID: selectedFollowUpModelID
+            )
         }
         perform(action, clearComposerOnAcceptance: true)
     }
@@ -254,6 +265,7 @@ public final class ConnViewModel: ObservableObject {
     public func createSession() {
         guard let workspace = try? ConnWorkspacePath(newSessionWorkspace),
               let prompt = try? ConnActionText(newSessionPrompt),
+              let modelID = selectedNewSessionModelID,
               let integration = presentation?.integrations.first(where: {
                   $0.state.capabilities.supports(.createSession)
                       && $0.state.freshness == .live
@@ -265,10 +277,48 @@ public final class ConnViewModel: ObservableObject {
             .createSession(
                 integrationID: integration.id,
                 workspacePath: workspace,
-                initialPrompt: prompt
+                initialPrompt: prompt,
+                modelID: modelID
             ),
             clearNewSessionOnAcceptance: true
         )
+    }
+
+    public func loadSessionModels() {
+        guard !isLoadingSessionModels,
+              let integration = presentation?.integrations.first(where: {
+                  $0.state.capabilities.supports(.createSession)
+                      && $0.state.freshness == .live
+              }) else {
+            sessionModelOptions = []
+            selectedNewSessionModelID = nil
+            sessionModelError = "Models require a live Integration"
+            return
+        }
+        let integrationID = integration.id
+        isLoadingSessionModels = true
+        sessionModelError = nil
+        Task { [weak self, coordinator] in
+            let result = await coordinator.sessionModels(for: integrationID)
+            guard let self else { return }
+            isLoadingSessionModels = false
+            guard result.outcome == .available,
+                  let catalog = result.catalog,
+                  !catalog.options.isEmpty else {
+                sessionModelOptions = []
+                selectedNewSessionModelID = nil
+                sessionModelError = result.outcome == .invalidated
+                    ? "The Integration changed while loading models. Retry."
+                    : "Models are unavailable from this Integration."
+                return
+            }
+            sessionModelOptions = catalog.options
+            if !catalog.options.contains(where: {
+                $0.id == selectedNewSessionModelID
+            }) {
+                selectedNewSessionModelID = catalog.defaultOptionID
+            }
+        }
     }
 
     public func markSelectedOutcomeReviewed() {
@@ -367,6 +417,7 @@ public final class ConnViewModel: ObservableObject {
             case .accepted:
                 actionNotice = outcome.evidence ?? "Accepted"
                 if clearComposerOnAcceptance { composerText = "" }
+                if clearComposerOnAcceptance { selectedFollowUpModelID = nil }
                 if let clearQuestionDraft {
                     questionDrafts.removeValue(forKey: clearQuestionDraft)
                 }

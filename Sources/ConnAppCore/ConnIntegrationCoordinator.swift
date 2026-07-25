@@ -282,6 +282,22 @@ public actor ConnIntegrationCoordinator {
         return await integration.perform(action)
     }
 
+    public func sessionModels(
+        for integrationID: IntegrationID
+    ) async -> ConnSessionModelCatalogResult {
+        guard let integration = integrations[integrationID],
+              let projection = projections[integrationID],
+              projection.freshness == .live,
+              projection.capabilities.supports(.createSession) else {
+            return .init(outcome: .unavailable)
+        }
+        let result = await integration.sessionModels()
+        guard result.catalog?.integrationID == integrationID || result.catalog == nil else {
+            return .init(outcome: .invalidated)
+        }
+        return result
+    }
+
     public func checkpoint(at date: Date = Date()) -> ConnProjectionCheckpoint {
         makeCheckpoint(at: date)
     }
@@ -355,7 +371,7 @@ public actor ConnIntegrationCoordinator {
         switch action {
         case .createSession:
             return true
-        case let .open(sessionID), let .followUp(sessionID, _):
+        case let .open(sessionID), let .followUp(sessionID, _, _):
             return projection.sessionsByID[sessionID] != nil
                 && projection.hasCurrentAuthority(for: sessionID)
         case let .steer(sessionID, runID, _),
