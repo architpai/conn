@@ -5,6 +5,43 @@ import ConnAppCore
 import QuartzCore
 import SwiftUI
 
+package struct ConnPanelFrameDecision: Equatable, Sendable {
+    package let frame: CGRect
+    package let placement: ShellPanelPlacement
+}
+
+package enum ConnPanelFramePolicy {
+    package static func decide(
+        displayFrame: CGRect,
+        visibleFrame: CGRect,
+        safeAreaTop: CGFloat,
+        isBuiltIn: Bool,
+        expanded: Bool,
+        compactShelfPreferredHeight: CGFloat
+    ) -> ConnPanelFrameDecision {
+        let placement: ShellPanelPlacement = isBuiltIn && safeAreaTop > 0
+            ? .physicalNotch
+            : .externalCapsule
+        let anchorFrame = placement == .physicalNotch
+            ? displayFrame
+            : visibleFrame
+        let width: CGFloat = expanded ? min(840, anchorFrame.width - 32) : 350
+        let height: CGFloat = expanded
+            ? min(620, visibleFrame.height - 44)
+            : max(44, compactShelfPreferredHeight + 8)
+        let topEdge = placement == .physicalNotch
+            ? displayFrame.maxY
+            : visibleFrame.maxY - 8
+        let frame = CGRect(
+            x: anchorFrame.midX - width / 2,
+            y: topEdge - height,
+            width: width,
+            height: height
+        ).integral
+        return .init(frame: frame, placement: placement)
+    }
+}
+
 @MainActor
 private final class ConnPanel: NSPanel {
     var onCancel: (() -> Void)?
@@ -111,6 +148,13 @@ public final class ConnPanelController<IntegrationSettingsContent: View> {
         if selectedScreen == nil || !screens.contains(where: { $0 === selectedScreen }) {
             selectedScreen = NSScreen.main ?? screens.first
         }
+        let decision = (selectedScreen ?? NSScreen.main ?? screens.first).map {
+            Self.frameDecision(
+                for: $0,
+                expanded: model.isExpanded,
+                compactShelfPreferredHeight: model.compactShelfPreferredHeight
+            )
+        }
         model.setDisplays(
             screens.compactMap { screen in
                 guard let id = Self.displayID(screen) else { return nil }
@@ -120,9 +164,7 @@ public final class ConnPanelController<IntegrationSettingsContent: View> {
                     isSelected: screen === selectedScreen
                 )
             },
-            panelPlacement: selectedScreen.map(Self.hasPhysicalNotch) == true
-                ? .physicalNotch
-                : .externalCapsule
+            panelPlacement: decision?.placement ?? .externalCapsule
         )
         applyGeometry(animated: false)
     }
@@ -191,18 +233,11 @@ public final class ConnPanelController<IntegrationSettingsContent: View> {
         guard let screen = selectedScreen ?? NSScreen.main ?? NSScreen.screens.first else {
             return
         }
-        let visible = screen.visibleFrame
-        let expanded = model.isExpanded
-        let width: CGFloat = expanded ? min(840, visible.width - 32) : 350
-        let height: CGFloat = expanded
-            ? min(620, visible.height - 44)
-            : max(44, model.compactShelfPreferredHeight + 8)
-        let frame = NSRect(
-            x: visible.midX - width / 2,
-            y: visible.maxY - height - 8,
-            width: width,
-            height: height
-        ).integral
+        let frame = Self.frameDecision(
+            for: screen,
+            expanded: model.isExpanded,
+            compactShelfPreferredHeight: model.compactShelfPreferredHeight
+        ).frame
         guard animated,
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             panel.setFrame(frame, display: true)
@@ -230,10 +265,19 @@ public final class ConnPanelController<IntegrationSettingsContent: View> {
             as? NSNumber)?.uint32Value
     }
 
-    private static func hasPhysicalNotch(_ screen: NSScreen) -> Bool {
-        if #available(macOS 12.0, *) {
-            return screen.safeAreaInsets.top > 0
-        }
-        return false
+    private static func frameDecision(
+        for screen: NSScreen,
+        expanded: Bool,
+        compactShelfPreferredHeight: CGFloat
+    ) -> ConnPanelFrameDecision {
+        let displayID = displayID(screen) ?? 0
+        return ConnPanelFramePolicy.decide(
+            displayFrame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            safeAreaTop: screen.safeAreaInsets.top,
+            isBuiltIn: displayID != 0 && CGDisplayIsBuiltin(displayID) != 0,
+            expanded: expanded,
+            compactShelfPreferredHeight: compactShelfPreferredHeight
+        )
     }
 }

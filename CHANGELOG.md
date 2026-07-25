@@ -33,6 +33,13 @@ Continued alpha release.
   confined to `ConnCodexAdapter`; Domain, AppCore, and UI no longer import it.
 - The disposable v0.1 projection and outcome baseline are intentionally reset.
 
+### Fixed
+
+- Anchor Conn to the physical notch edge on built-in notched MacBook displays
+  while retaining menu-bar clearance on external displays.
+- Make every Shared Desktop diagnosis visibly confirm completion, show the
+  bounded host-version tuple, and explain when the tuple is candidate-only.
+
 ### Known limitations
 
 - Codex is the only supported Harness in v0.2. Claude Code, Pi, OpenCode, and

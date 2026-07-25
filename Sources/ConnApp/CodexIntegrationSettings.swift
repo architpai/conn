@@ -12,6 +12,7 @@ final class CodexIntegrationSettingsModel: ObservableObject {
     @Published private(set) var isWorking = false
     @Published private(set) var diagnostics: SharedDesktopDiagnosticsSnapshot?
     @Published private(set) var setupResult: SharedDesktopSetupResult?
+    @Published private(set) var lastDiagnosedAt: Date?
     @Published private(set) var legacyPluginCandidate:
         LegacySidequestPluginCandidate?
     @Published private(set) var legacyPluginResult: String?
@@ -43,6 +44,7 @@ final class CodexIntegrationSettingsModel: ObservableObject {
             )
             guard !Task.isCancelled else { return }
             diagnostics = snapshot
+            lastDiagnosedAt = Date()
             legacyPluginCandidate = await integration.legacyPluginCandidate()
             isWorking = false
         }
@@ -135,10 +137,34 @@ struct CodexIntegrationSettingsView: View {
                         Text(presentation.detail)
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
+                        Text(model.diagnostics?.host.versionLabel ?? "")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                        if model.diagnostics?.evidence.versionQualification
+                            != .compatible {
+                            Text(
+                                "This Desktop build is outside the verified Shared Desktop tuple. Ordinary Codex supervision remains available."
+                            )
+                            .font(.system(size: 9))
+                            .foregroundStyle(.orange)
+                        }
+                        if let lastDiagnosedAt = model.lastDiagnosedAt {
+                            Text(
+                                "Checked \(lastDiagnosedAt.formatted(date: .omitted, time: .standard))"
+                            )
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 HStack {
-                    Button("Diagnose") { model.refresh() }
+                    Button(
+                        model.lastDiagnosedAt == nil
+                            ? "Diagnose"
+                            : "Diagnose again"
+                    ) {
+                        model.refresh()
+                    }
                     Button("Set up") { model.setUp() }
                     Button("Turn off") { model.turnOff() }
                 }

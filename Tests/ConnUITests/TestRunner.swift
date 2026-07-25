@@ -9,9 +9,10 @@ private enum ConnUITestRunner {
         Phase87ShellTestCases.run(into: &suite)
         Phase115UIOverhaulTestCases.run(into: &suite)
         Phase115CompactShelfMotionTestCases.run(into: &suite)
+        V02CandidateRegressionTestCases.run(into: &suite)
 
         if suite.failures.isEmpty {
-            print("V0.2 UI PARITY: 192 of 192 assertions")
+            print("V0.2 UI PARITY: 196 of 196 assertions")
             print("PASS: \(suite.assertions) assertions")
             Foundation.exit(EXIT_SUCCESS)
         }
