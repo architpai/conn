@@ -1,4 +1,5 @@
 import Foundation
+import ConnCodexAdapter
 import ConnDomain
 
 public enum AppServerPresentationTone: String, Equatable, Sendable {

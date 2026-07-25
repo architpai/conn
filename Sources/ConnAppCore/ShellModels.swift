@@ -1,4 +1,5 @@
 import CoreGraphics
+import ConnCodexAdapter
 import Darwin
 import Foundation
 import ConnDomain

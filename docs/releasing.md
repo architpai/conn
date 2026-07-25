@@ -10,7 +10,7 @@ Run the complete app-core suite on a Mac with an interactive login session;
 it exercises macOS workspace and session behavior that hosted CI cannot model.
 
 ```sh
-swift run conn-app-server-adapter-tests
+swift run conn-codex-adapter-tests
 swift run conn-domain-tests
 swift run conn-app-core-tests
 ./scripts/test-inspect-release.sh

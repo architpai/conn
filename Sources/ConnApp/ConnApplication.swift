@@ -1,4 +1,5 @@
 import AppKit
+import ConnCodexAdapter
 import Darwin
 import Foundation
 import ConnAppCore
@@ -254,6 +255,22 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Starts the sole production state source. Conn observes and controls
     /// Codex only through the stable App Server protocol.
+    nonisolated private static func retireLegacyHooks() -> String? {
+        do {
+            switch try LegacyHookRetirementStore.userDefault().retire() {
+            case .alreadyCompleted:
+                return nil
+            case let .completed(removedLegacyRoots, legacyStateReappeared: false):
+                guard removedLegacyRoots > 0 else { return nil }
+                return "Legacy hook checkpoints were discarded. Verify the old Sidequest plugin is removed; managed-daemon monitoring remains active."
+            case .completed(_, legacyStateReappeared: true):
+                return "Legacy hook state reappeared after retirement. Remove the old Sidequest plugin; managed-daemon monitoring remains active."
+            }
+        } catch {
+            return "Legacy hook cleanup needs repair. Managed-daemon monitoring remains active; the retired bridge was not re-enabled."
+        }
+    }
+
     private func startAppServerMonitoring() {
         let generation = UUID()
         let runtime = AppServerMonitoringRuntime(configuration: .init(
@@ -276,7 +293,7 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
             activeDiscoveryInterval: 2,
             activeDiscoveryThreadLimit: 20,
             approvalRoutingPolicy: .allSubscribedConnectionsQualified
-        ))
+        ), legacyHookRetirement: Self.retireLegacyHooks)
         appServerRuntime = runtime
         viewModel.onQualifySelectedSession = { [weak self] threadID in
             guard self?.appServerRuntime === runtime else { return }

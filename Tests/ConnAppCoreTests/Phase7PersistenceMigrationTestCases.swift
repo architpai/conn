@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 import ConnAppCore
-import ConnAppServerAdapter
+import ConnCodexAdapter
 import ConnDomain
 
 enum Phase7PersistenceMigrationTestCases {

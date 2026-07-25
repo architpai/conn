@@ -28,7 +28,7 @@ Build the app and run the executable test harnesses from the repository root:
 swift build
 swift run conn-domain-tests
 swift run conn-app-core-tests
-swift run conn-app-server-adapter-tests
+swift run conn-codex-adapter-tests
 ./scripts/test-inspect-release.sh
 ```
 

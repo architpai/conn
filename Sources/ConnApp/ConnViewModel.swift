@@ -1,4 +1,5 @@
 import AppKit
+import ConnCodexAdapter
 import Combine
 import Foundation
 import ConnAppCore

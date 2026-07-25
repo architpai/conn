@@ -1,4 +1,5 @@
 import AppKit
+import ConnCodexAdapter
 import SwiftUI
 import ConnAppCore
 import ConnDomain

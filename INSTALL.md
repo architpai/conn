@@ -64,7 +64,7 @@ open /Applications/Conn.app
 ## Verify a source build
 
 ```sh
-swift run conn-app-server-adapter-tests
+swift run conn-codex-adapter-tests
 swift run conn-domain-tests
 swift run conn-app-core-tests
 ./scripts/test-inspect-release.sh

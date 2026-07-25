@@ -82,7 +82,7 @@ Server messages and does not scrape transcript files or install hooks.
 The implementation is split into:
 
 - `ConnDomain` for typed thread and turn projection.
-- `ConnAppServerAdapter` for version-gated App Server transport and protocol.
+- `ConnCodexAdapter` for version-gated App Server transport and protocol.
 - `ConnAppCore` for monitoring, persistence, presentation, and controls.
 - `ConnApp` for the AppKit and SwiftUI notch surface.
 
@@ -108,7 +108,7 @@ git clone https://github.com/architpai/conn.git
 cd conn
 ./scripts/build-app.sh
 
-swift run conn-app-server-adapter-tests
+swift run conn-codex-adapter-tests
 swift run conn-domain-tests
 swift run conn-app-core-tests
 ./scripts/test-inspect-release.sh

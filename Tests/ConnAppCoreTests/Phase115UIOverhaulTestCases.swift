@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 import ConnAppCore
-import ConnAppServerAdapter
+import ConnCodexAdapter
 import ConnDomain
 
 enum Phase115UIOverhaulTestCases {

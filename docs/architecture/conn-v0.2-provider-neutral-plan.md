@@ -590,6 +590,8 @@ Checkpoint intent: `refactor: add provider-neutral Conn domain`
 
 ### Phase 3 — Complete `ConnCodexAdapter`
 
+Evidence: [Conn v0.2 Phase 3 results](conn-v0.2-phase3-results.md).
+
 Tasks:
 
 1. Rename/restructure `ConnAppServerAdapter` as `ConnCodexAdapter`.

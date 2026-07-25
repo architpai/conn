@@ -1,4 +1,5 @@
 import AppKit
+import ConnCodexAdapter
 import CoreGraphics
 import Foundation
 import QuartzCore

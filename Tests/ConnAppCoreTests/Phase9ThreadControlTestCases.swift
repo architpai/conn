@@ -1,6 +1,6 @@
 import Foundation
 import ConnAppCore
-import ConnAppServerAdapter
+import ConnCodexAdapter
 import ConnDomain
 
 enum Phase9ThreadControlTestCases {
