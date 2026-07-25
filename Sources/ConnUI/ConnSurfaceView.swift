@@ -84,16 +84,15 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             placement: model.panelPlacement
         )
         return ZStack {
-            if model.isExpanded {
-                Button {
-                    model.onToggleExpansion?()
-                } label: {
-                    Color.clear
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityHidden(true)
+            Button {
+                model.onToggleExpansion?()
+            } label: {
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityHidden(true)
 
             HStack(spacing: 10) {
                 Button {
@@ -330,24 +329,58 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
     }
 
     private func activityRow(_ item: ConnActivityPresentation) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: activitySymbol(item.activity.kind))
-                .frame(width: 18)
-                .foregroundStyle(toneColor(item.tone))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.label)
-                    .font(.system(size: 11, weight: .semibold))
-                if let detail = item.detail {
-                    Text(detail)
-                        .font(.system(size: 12))
-                        .textSelection(.enabled)
+        let lane = ConnTranscriptAlignmentPolicy.lane(
+            for: item.activity.kind
+        )
+        let isUser = lane == .trailing
+        return HStack(alignment: .top, spacing: 0) {
+            if isUser {
+                Spacer(minLength: 72)
+            }
+            HStack(alignment: .top, spacing: 10) {
+                if !isUser {
+                    activityIcon(item)
+                }
+                VStack(
+                    alignment: isUser ? .trailing : .leading,
+                    spacing: 4
+                ) {
+                    Text(item.label)
+                        .font(.system(size: 11, weight: .semibold))
+                    if let detail = item.detail {
+                        Text(detail)
+                            .font(.system(size: 12))
+                            .multilineTextAlignment(
+                                isUser ? .trailing : .leading
+                            )
+                            .textSelection(.enabled)
+                    }
+                }
+                if isUser {
+                    activityIcon(item)
                 }
             }
-            Spacer(minLength: 0)
+            .padding(10)
+            .background(
+                isUser
+                    ? Color.accentColor.opacity(0.14)
+                    : Color.white.opacity(0.035),
+                in: RoundedRectangle(cornerRadius: 10)
+            )
+            .accessibilityElement(children: .combine)
+            if !isUser {
+                Spacer(minLength: 72)
+            }
         }
-        .padding(10)
-        .background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
-        .accessibilityElement(children: .combine)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func activityIcon(
+        _ item: ConnActivityPresentation
+    ) -> some View {
+        Image(systemName: activitySymbol(item.activity.kind))
+            .frame(width: 18)
+            .foregroundStyle(toneColor(item.tone))
     }
 
     @ViewBuilder
@@ -446,9 +479,11 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             HStack(spacing: 8) {
                 Picker(
                     "Model",
-                    selection: $model.selectedFollowUpModelID
+                    selection: Binding(
+                        get: { model.selectedFollowUpModelID },
+                        set: { model.updateFollowUpModel($0) }
+                    )
                 ) {
-                    Text("Current model").tag(Optional<ConnSessionModelID>.none)
                     ForEach(model.sessionModelOptions) { option in
                         Text(option.displayName).tag(Optional(option.id))
                     }
@@ -466,6 +501,22 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                         ? "Use the current model or override the next follow-up."
                         : "Model changes are available when this Session is idle."
                 )
+                Picker(
+                    "Reasoning",
+                    selection: $model.selectedFollowUpReasoningEffortID
+                ) {
+                    ForEach(model.followUpReasoningEfforts) { effort in
+                        Text(effort.displayName).tag(Optional(effort.id))
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 110)
+                .disabled(
+                    model.isLoadingSessionModels
+                        || !canOverrideModel
+                )
+                .accessibilityLabel("Reasoning for next message")
                 TextField("Follow up or steer…", text: $model.composerText)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { model.submitComposer() }
@@ -556,10 +607,10 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                         .buttonStyle(.bordered)
                         .disabled(model.isLoadingSessionModels)
                     } else {
-                        Picker(
-                            "Model",
-                            selection: $model.selectedNewSessionModelID
-                        ) {
+                        Picker("Model", selection: Binding(
+                            get: { model.selectedNewSessionModelID },
+                            set: { model.updateNewSessionModel($0) }
+                        )) {
                             ForEach(model.sessionModelOptions) { option in
                                 Text(option.displayName).tag(Optional(option.id))
                             }
@@ -571,6 +622,16 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                                 $0.id == model.selectedNewSessionModelID
                             })?.detail ?? "Model for the first message"
                         )
+                        Picker(
+                            "Reasoning",
+                            selection: $model.selectedNewSessionReasoningEffortID
+                        ) {
+                            ForEach(model.newSessionReasoningEfforts) { effort in
+                                Text(effort.displayName).tag(Optional(effort.id))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .accessibilityLabel("Reasoning for new Session")
                     }
                     Spacer()
                 }
@@ -593,6 +654,7 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                     .disabled(
                         model.isPerformingAction
                             || model.selectedNewSessionModelID == nil
+                            || model.selectedNewSessionReasoningEffortID == nil
                     )
                 }
             }

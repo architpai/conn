@@ -39,16 +39,43 @@ enum Phase2ConnIntegrationTestCases {
         into suite: inout TestSuite
     ) throws {
         let selectedModelID = ConnSessionModelID(rawValue: "model-option-1")
+        let low = ConnReasoningEffortOption(
+            id: .init(rawValue: "low"),
+            displayName: "Low"
+        )
+        let high = ConnReasoningEffortOption(
+            id: .init(rawValue: "high"),
+            displayName: "High"
+        )
+        let model = ConnSessionModelOption(
+            id: selectedModelID,
+            displayName: "Model One",
+            isDefault: true,
+            reasoningEfforts: [low, high],
+            defaultReasoningEffortID: high.id
+        )
+        suite.check(
+            model.reasoningEfforts.map(\.id) == [low.id, high.id],
+            "Each model preserves only its own advertised reasoning choices"
+        )
+        suite.check(
+            model.defaultReasoningEffortID == high.id,
+            "Each model preserves its advertised default reasoning choice"
+        )
+        let selection = ConnSessionModelSelection(
+            modelID: selectedModelID,
+            reasoningEffortID: low.id
+        )
         let action = ConnAction.createSession(
             integrationID: codexIntegration,
             workspacePath: try ConnWorkspacePath("/tmp/project"),
             initialPrompt: try ConnActionText("Start here"),
-            modelID: selectedModelID
+            modelSelection: selection
         )
-        if case let .createSession(_, _, _, modelID) = action {
+        if case let .createSession(_, _, _, modelSelection) = action {
             suite.check(
-                modelID == selectedModelID,
-                "Session creation preserves the provider-neutral selected model ID"
+                modelSelection == selection,
+                "Session creation preserves the provider-neutral model and reasoning selection"
             )
         } else {
             suite.check(false, "Session creation remains a create action")
@@ -57,12 +84,12 @@ enum Phase2ConnIntegrationTestCases {
         let followUp = ConnAction.followUp(
             sessionID: codexSessionID,
             text: try ConnActionText("Continue"),
-            modelID: selectedModelID
+            modelSelection: selection
         )
-        if case let .followUp(_, _, modelID) = followUp {
+        if case let .followUp(_, _, modelSelection) = followUp {
             suite.check(
-                modelID == selectedModelID,
-                "Follow-up preserves the optional provider-neutral model override"
+                modelSelection == selection,
+                "Follow-up preserves the optional provider-neutral model and reasoning override"
             )
         } else {
             suite.check(false, "Follow-up remains a follow-up action")

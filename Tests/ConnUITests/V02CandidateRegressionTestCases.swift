@@ -93,6 +93,21 @@ enum V02CandidateRegressionTestCases {
             350,
             "external capsules retain their compact width"
         )
+        suite.checkEqual(
+            ConnTranscriptAlignmentPolicy.lane(for: .userMessage),
+            .trailing,
+            "User messages occupy the trailing conversation lane"
+        )
+        suite.checkEqual(
+            ConnTranscriptAlignmentPolicy.lane(for: .agentMessage),
+            .leading,
+            "Agent messages occupy the leading conversation lane"
+        )
+        suite.checkEqual(
+            ConnTranscriptAlignmentPolicy.lane(for: .reasoning),
+            .leading,
+            "Agent reasoning remains grouped in the leading lane"
+        )
 
         var sleepCount = 0
         var expiredIDs: [String] = []

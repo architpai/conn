@@ -69,6 +69,14 @@ public struct ConnSessionModelID: RawRepresentable, Hashable, Comparable, Sendab
     public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
+public struct ConnReasoningEffortID:
+    RawRepresentable, Hashable, Comparable, Sendable
+{
+    public let rawValue: String
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+}
+
 // MARK: - Runtime authority
 
 /// Authority for exactly one live Integration connection. It is deliberately
@@ -530,12 +538,16 @@ public struct ConnSessionModelOption: Equatable, Identifiable, Sendable {
     public let displayName: String
     public let detail: String?
     public let isDefault: Bool
+    public let reasoningEfforts: [ConnReasoningEffortOption]
+    public let defaultReasoningEffortID: ConnReasoningEffortID?
 
     public init(
         id: ConnSessionModelID,
         displayName: String,
         detail: String? = nil,
         isDefault: Bool,
+        reasoningEfforts: [ConnReasoningEffortOption] = [],
+        defaultReasoningEffortID: ConnReasoningEffortID? = nil,
         bounds: ConnDomainBounds = .default
     ) {
         self.id = id
@@ -550,19 +562,64 @@ public struct ConnSessionModelOption: Equatable, Identifiable, Sendable {
             )
         }
         self.isDefault = isDefault
+        self.reasoningEfforts = reasoningEfforts
+        self.defaultReasoningEffortID = defaultReasoningEffortID.flatMap { candidate in
+            reasoningEfforts.contains(where: { $0.id == candidate }) ? candidate : nil
+        }
+    }
+}
+
+public struct ConnReasoningEffortOption: Equatable, Identifiable, Sendable {
+    public let id: ConnReasoningEffortID
+    public let displayName: String
+    public let detail: String?
+
+    public init(
+        id: ConnReasoningEffortID,
+        displayName: String,
+        detail: String? = nil,
+        bounds: ConnDomainBounds = .default
+    ) {
+        self.id = id
+        self.displayName = ConnDomainBounds.boundedSingleLine(
+            displayName,
+            maximumUTF8Bytes: bounds.maximumTitleUTF8Bytes
+        )
+        self.detail = detail.map {
+            ConnDomainBounds.boundedSingleLine(
+                $0,
+                maximumUTF8Bytes: bounds.maximumSummaryUTF8Bytes
+            )
+        }
+    }
+}
+
+public struct ConnSessionModelSelection: Equatable, Sendable {
+    public let modelID: ConnSessionModelID
+    public let reasoningEffortID: ConnReasoningEffortID
+
+    public init(
+        modelID: ConnSessionModelID,
+        reasoningEffortID: ConnReasoningEffortID
+    ) {
+        self.modelID = modelID
+        self.reasoningEffortID = reasoningEffortID
     }
 }
 
 public struct ConnSessionModelCatalog: Equatable, Sendable {
     public let integrationID: IntegrationID
     public let options: [ConnSessionModelOption]
+    public let currentSelection: ConnSessionModelSelection?
 
     public init(
         integrationID: IntegrationID,
-        options: [ConnSessionModelOption]
+        options: [ConnSessionModelOption],
+        currentSelection: ConnSessionModelSelection? = nil
     ) {
         self.integrationID = integrationID
         self.options = options
+        self.currentSelection = currentSelection
     }
 
     public var defaultOptionID: ConnSessionModelID? {
@@ -631,12 +688,12 @@ public enum ConnAction: Equatable, Sendable {
         integrationID: IntegrationID,
         workspacePath: ConnWorkspacePath,
         initialPrompt: ConnActionText,
-        modelID: ConnSessionModelID
+        modelSelection: ConnSessionModelSelection
     )
     case followUp(
         sessionID: ConnSessionID,
         text: ConnActionText,
-        modelID: ConnSessionModelID? = nil
+        modelSelection: ConnSessionModelSelection? = nil
     )
     case steer(sessionID: ConnSessionID, runID: RunID, text: ConnActionText)
     case interrupt(sessionID: ConnSessionID, runID: RunID)

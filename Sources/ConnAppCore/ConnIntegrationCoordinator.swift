@@ -283,7 +283,8 @@ public actor ConnIntegrationCoordinator {
     }
 
     public func sessionModels(
-        for integrationID: IntegrationID
+        for integrationID: IntegrationID,
+        sessionID: ConnSessionID? = nil
     ) async -> ConnSessionModelCatalogResult {
         guard let integration = integrations[integrationID],
               let projection = projections[integrationID],
@@ -291,7 +292,10 @@ public actor ConnIntegrationCoordinator {
               projection.capabilities.supports(.createSession) else {
             return .init(outcome: .unavailable)
         }
-        let result = await integration.sessionModels()
+        guard sessionID == nil || sessionID?.integrationID == integrationID else {
+            return .init(outcome: .invalidated)
+        }
+        let result = await integration.sessionModels(for: sessionID)
         guard result.catalog?.integrationID == integrationID || result.catalog == nil else {
             return .init(outcome: .invalidated)
         }

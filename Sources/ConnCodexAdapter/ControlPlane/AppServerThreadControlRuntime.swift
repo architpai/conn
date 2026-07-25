@@ -732,7 +732,8 @@ public actor AppServerThreadControlRuntime {
                 params: messageParams(
                     threadID: threadID,
                     text: normalized.initialPrompt,
-                    expectedTurnID: nil
+                    expectedTurnID: nil,
+                    reasoningEffort: normalized.reasoningEffort
                 ),
                 timeout: configuration.requestAcknowledgementTimeout
             )
@@ -848,14 +849,15 @@ public actor AppServerThreadControlRuntime {
             return .init(outcome: .connectionInvalidated, draftRevision: intent.draftRevision)
         }
         switch intent {
-        case let .followUp(threadID, text, model, revision):
+        case let .followUp(threadID, text, model, reasoningEffort, revision):
             let response = try await capturedSession.connection.requestEnvelope(
                 method: "turn/start",
                 params: messageParams(
                     threadID: threadID,
                     text: text,
                     expectedTurnID: nil,
-                    model: model
+                    model: model,
+                    reasoningEffort: reasoningEffort
                 ),
                 timeout: configuration.requestAcknowledgementTimeout
             )
@@ -1098,15 +1100,26 @@ public actor AppServerThreadControlRuntime {
               isCurrentSession(capturedSession),
               let catalog = newThreadModelCatalog,
               catalog.connection == capturedSession.domainConnection else { return false }
-        return catalog.options.contains {
-            $0.id == intent.modelID && $0.model == intent.model
+        return catalog.options.contains { option in
+            option.id == intent.modelID
+                && option.model == intent.model
+                && intent.reasoningEffort.map { selectedEffort in
+                    option.supportedReasoningEfforts.contains {
+                        $0.reasoningEffort == selectedEffort
+                    }
+                } ?? true
         }
     }
 
     private func validatedNewThreadInput(
         _ intent: AppServerNewThreadIntent,
         permitsEmptyPrompt: Bool = false
-    ) -> (workingDirectory: String, initialPrompt: String, model: String)? {
+    ) -> (
+        workingDirectory: String,
+        initialPrompt: String,
+        model: String,
+        reasoningEffort: String?
+    )? {
         let rawDirectory = intent.workingDirectory.trimmingCharacters(in: .whitespaces)
         let prompt = intent.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard NSString(string: rawDirectory).isAbsolutePath,
@@ -1116,12 +1129,17 @@ public actor AppServerThreadControlRuntime {
               prompt.utf8.count <= 16 * 1_024,
               (permitsEmptyPrompt || !intent.model.isEmpty),
               intent.model.utf8.count <= Self.maximumModelIdentityUTF8Bytes,
-              !intent.model.unicodeScalars.contains(where: Self.isLineSeparator) else { return nil }
+              !intent.model.unicodeScalars.contains(where: Self.isLineSeparator),
+              (intent.reasoningEffort?.utf8.count ?? 0)
+                <= Self.maximumModelIdentityUTF8Bytes,
+              intent.reasoningEffort?.unicodeScalars.contains(
+                where: Self.isLineSeparator
+              ) != true else { return nil }
         let directory = URL(fileURLWithPath: rawDirectory).standardizedFileURL.path
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory),
               isDirectory.boolValue else { return nil }
-        return (directory, prompt, intent.model)
+        return (directory, prompt, intent.model, intent.reasoningEffort)
     }
 
     private func decodeModelListPage(
@@ -1140,8 +1158,10 @@ public actor AppServerThreadControlRuntime {
                   let description = row["description"]?.stringValue,
                   let hidden = row["hidden"]?.boolValue,
                   let isDefault = row["isDefault"]?.boolValue,
-                  row["defaultReasoningEffort"]?.stringValue != nil,
-                  row["supportedReasoningEfforts"]?.arrayValue != nil,
+                  let defaultReasoningEffort =
+                    row["defaultReasoningEffort"]?.stringValue,
+                  let encodedReasoningEfforts =
+                    row["supportedReasoningEfforts"]?.arrayValue,
                   !id.isEmpty,
                   !model.isEmpty,
                   !displayName.isEmpty,
@@ -1151,15 +1171,53 @@ public actor AppServerThreadControlRuntime {
                   description.utf8.count <= Self.maximumModelDescriptionUTF8Bytes,
                   !id.unicodeScalars.contains(where: Self.isLineSeparator),
                   !model.unicodeScalars.contains(where: Self.isLineSeparator),
-                  !displayName.unicodeScalars.contains(where: Self.isLineSeparator)
+                  !displayName.unicodeScalars.contains(where: Self.isLineSeparator),
+                  !defaultReasoningEffort.isEmpty,
+                  defaultReasoningEffort.utf8.count
+                    <= Self.maximumModelIdentityUTF8Bytes,
+                  !defaultReasoningEffort.unicodeScalars.contains(
+                    where: Self.isLineSeparator
+                  )
             else { return nil }
             guard !hidden else { continue }
+            var reasoningEfforts: [AppServerReasoningEffortOption] = []
+            var seenReasoningEfforts: Set<String> = []
+            for encodedEffort in encodedReasoningEfforts {
+                guard let effort = encodedEffort.objectValue,
+                      let reasoningEffort = effort["reasoningEffort"]?.stringValue,
+                      let effortDescription = effort["description"]?.stringValue,
+                      !reasoningEffort.isEmpty,
+                      reasoningEffort.utf8.count
+                        <= Self.maximumModelIdentityUTF8Bytes,
+                      effortDescription.utf8.count
+                        <= Self.maximumModelDescriptionUTF8Bytes,
+                      !reasoningEffort.unicodeScalars.contains(
+                        where: Self.isLineSeparator
+                      ),
+                      seenReasoningEfforts.insert(reasoningEffort).inserted
+                else { return nil }
+                reasoningEfforts.append(.init(
+                    reasoningEffort: reasoningEffort,
+                    description: effortDescription
+                ))
+            }
+            if reasoningEfforts.isEmpty {
+                reasoningEfforts = [.init(
+                    reasoningEffort: defaultReasoningEffort,
+                    description: defaultReasoningEffort
+                )]
+            }
+            guard reasoningEfforts.contains(where: {
+                $0.reasoningEffort == defaultReasoningEffort
+            }) else { return nil }
             options.append(.init(
                 id: id,
                 model: model,
                 displayName: displayName,
                 detail: description,
-                isDefault: isDefault
+                isDefault: isDefault,
+                defaultReasoningEffort: defaultReasoningEffort,
+                supportedReasoningEfforts: reasoningEfforts
             ))
         }
 
@@ -1248,9 +1306,18 @@ public actor AppServerThreadControlRuntime {
         _ intent: AppServerControlIntent,
         session capturedSession: Session
     ) -> Bool {
-        guard case let .followUp(_, _, model, _) = intent, let model else { return true }
+        guard case let .followUp(_, _, model, reasoningEffort, _) = intent
+        else { return true }
+        guard let model else { return reasoningEffort == nil }
         return newThreadModelCatalog?.connection == capturedSession.domainConnection
-            && newThreadModelCatalog?.options.contains(where: { $0.model == model }) == true
+            && newThreadModelCatalog?.options.contains(where: { option in
+                option.model == model
+                    && reasoningEffort.map { selectedEffort in
+                        option.supportedReasoningEfforts.contains {
+                            $0.reasoningEffort == selectedEffort
+                        }
+                    } ?? true
+            }) == true
     }
 
     private func mayUseCreatedEmptyThreadLease(
@@ -1370,7 +1437,7 @@ public actor AppServerThreadControlRuntime {
 
     private func intentKey(_ intent: AppServerControlIntent) -> IntentKey {
         switch intent {
-        case let .followUp(threadID, _, _, revision): .followUp(threadID, revision)
+        case let .followUp(threadID, _, _, _, revision): .followUp(threadID, revision)
         case let .steer(threadID, turnID, _, revision): .steer(threadID, turnID, revision)
         case let .decide(request, _, _, _): .decide(request)
         case let .answer(request, _, _, _): .answer(request)
@@ -1391,7 +1458,8 @@ public actor AppServerThreadControlRuntime {
         threadID: AppServerThreadID,
         text: String,
         expectedTurnID: AppServerTurnID?,
-        model: String? = nil
+        model: String? = nil,
+        reasoningEffort: String? = nil
     ) -> JSONValue {
         var params: [String: JSONValue] = [
             "threadId": .string(threadID.rawValue),
@@ -1405,6 +1473,9 @@ public actor AppServerThreadControlRuntime {
         }
         if let model {
             params["model"] = .string(model)
+        }
+        if let reasoningEffort {
+            params["reasoning_effort"] = .string(reasoningEffort)
         }
         return .object(params)
     }
@@ -1481,7 +1552,7 @@ public actor AppServerThreadControlRuntime {
 private extension AppServerControlIntent {
     var threadID: AppServerThreadID {
         switch self {
-        case let .followUp(threadID, _, _, _),
+        case let .followUp(threadID, _, _, _, _),
              let .steer(threadID, _, _, _),
              let .decide(_, threadID, _, _),
              let .answer(_, threadID, _, _),
@@ -1510,7 +1581,8 @@ private extension AppServerControlIntent {
 
     var draftRevision: UInt64? {
         switch self {
-        case let .followUp(_, _, _, revision), let .steer(_, _, _, revision): revision
+        case let .followUp(_, _, _, _, revision),
+             let .steer(_, _, _, revision): revision
         case .decide, .answer, .interrupt: nil
         }
     }

@@ -44,6 +44,12 @@ Continued alpha release.
   tail when switching Sessions.
 - Model selection is restored for new Sessions and idle follow-ups through a
   provider-neutral, Integration-supplied model catalog.
+- Model and reasoning are separate composer controls; each model exposes only
+  its Integration-advertised reasoning choices.
+- User messages use the trailing transcript lane while Harness messages,
+  reasoning, and tool activity use the leading lane.
+- The compact Conn bar now uses the same full-width toggle target as the
+  expanded bar.
 
 ### Fixed
 
@@ -53,6 +59,8 @@ Continued alpha release.
   bounded host-version tuple, and explain when the tuple is candidate-only.
 - Preserve the selected opaque model ID across Conn's action boundary and
   revalidate it against the current Codex App Server catalog before sending.
+- Show the current Session's actual model and reasoning effort instead of the
+  ambiguous `Current model` placeholder.
 
 ### Known limitations
 

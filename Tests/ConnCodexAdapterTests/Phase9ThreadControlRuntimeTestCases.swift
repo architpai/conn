@@ -231,7 +231,8 @@ enum Phase9ThreadControlRuntimeTestCases {
             id: "default-id",
             model: "gpt-default",
             displayName: "Default Model",
-            isDefault: true
+            isDefault: true,
+            reasoningEfforts: ["low", "medium"]
         )
         let duplicateRow = modelRow(
             id: "duplicate-id",
@@ -246,7 +247,15 @@ enum Phase9ThreadControlRuntimeTestCases {
                     nextCursor: .string("page-two")
                 )),
                 .success(method: "model/list", result: modelListPage(
-                    rows: [duplicateRow, modelRow(id: "other-id", model: "gpt-other", displayName: "Other Model")]
+                    rows: [
+                        duplicateRow,
+                        modelRow(
+                            id: "other-id",
+                            model: "gpt-other",
+                            displayName: "Other Model",
+                            reasoningEfforts: ["medium", "high", "xhigh"]
+                        ),
+                    ]
                 )),
             ]
         )
@@ -254,7 +263,19 @@ enum Phase9ThreadControlRuntimeTestCases {
         let result = await harness.runtime.loadNewThreadModelCatalog()
 
         suite.checkEqual(result.outcome, .available, "bounded paginated model catalog becomes available")
-        suite.checkEqual(result.catalog?.options.map(\.model), ["gpt-default", "gpt-other"], "hidden models are excluded and exact wire-model duplicates are removed")
+        suite.checkEqual(
+            result.catalog?.options.map {
+                "\($0.model)|\($0.defaultReasoningEffort)|"
+                    + $0.supportedReasoningEfforts
+                        .map(\.reasoningEffort)
+                        .joined(separator: ",")
+            },
+            [
+                "gpt-default|medium|low,medium",
+                "gpt-other|medium|medium,high,xhigh",
+            ],
+            "catalog preserves each visible model and only its advertised reasoning choices"
+        )
         suite.checkEqual(result.catalog?.defaultOptionID, "default-id", "the visible server default is selected")
         let calls = await connection.requestCalls()
         suite.checkEqual(calls.map(\.method), ["model/list", "model/list"], "catalog pagination performs only stable reads")
@@ -482,6 +503,7 @@ enum Phase9ThreadControlRuntimeTestCases {
             initialPrompt: "Start safely",
             modelID: testModelID,
             model: testModel,
+            reasoningEffort: "high",
             draftRevision: 901
         ))
 
@@ -515,6 +537,7 @@ enum Phase9ThreadControlRuntimeTestCases {
                     "type": .string("text"),
                     "text": .string("Start safely"),
                 ])]),
+                "reasoning_effort": .string("high"),
             ]),
             "the first turn targets only the exact returned thread with bounded text input"
         )
@@ -1805,7 +1828,8 @@ enum Phase9ThreadControlRuntimeTestCases {
         model: String = testModel,
         displayName: String = "Phase 9.2 Model",
         hidden: Bool = false,
-        isDefault: Bool = false
+        isDefault: Bool = false,
+        reasoningEfforts: [String] = ["low", "medium", "high"]
     ) -> JSONValue {
         .object([
             "id": .string(id),
@@ -1815,7 +1839,16 @@ enum Phase9ThreadControlRuntimeTestCases {
             "hidden": .bool(hidden),
             "isDefault": .bool(isDefault),
             "defaultReasoningEffort": .string("medium"),
-            "supportedReasoningEfforts": .array([]),
+            "supportedReasoningEfforts": .array(
+                reasoningEfforts.map(reasoningEffort)
+            ),
+        ])
+    }
+
+    private static func reasoningEffort(_ value: String) -> JSONValue {
+        .object([
+            "reasoningEffort": .string(value),
+            "description": .string("\(value.capitalized) reasoning"),
         ])
     }
 

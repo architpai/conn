@@ -2,7 +2,7 @@
 
 Status: Offline gate complete; live acceptance and public release pending.
 
-The local candidate is Conn `0.2.0` build `10`, a continued Alpha release.
+The local candidate is Conn `0.2.0` build `11`, a continued Alpha release.
 Codex is the only supported Harness. Claude Code, Pi, OpenCode, and other
 Harness adapters are not included.
 
@@ -11,8 +11,8 @@ Harness adapters are not included.
 The following pass on 2026-07-25:
 
 - `swift build`;
-- all four required owner executables: 1,469 Codex-adapter assertions, 69
-  Domain assertions, 217 AppCore assertions, and 208 UI assertions;
+- all four required owner executables: 1,469 Codex-adapter assertions, 71
+  Domain assertions, 217 AppCore assertions, and 211 UI assertions;
 - 14 ConnApp migration-edge assertions;
 - provider-boundary and schema-provenance verification;
 - release-inspection self-tests;
@@ -25,7 +25,7 @@ The built candidate is:
 ```text
 .build/conn-app/Conn.app
 CFBundleShortVersionString = 0.2.0
-CFBundleVersion = 10
+CFBundleVersion = 11
 signature = local ad-hoc
 notarization = not claimed
 ```
@@ -90,6 +90,15 @@ adapter supplies bounded picker labels and revalidates the selected ID against
 the current live App Server catalog before any consequential send. Active Runs
 retain their current model because model overrides are disabled while Conn is
 steering.
+
+Build 11 deepens that neutral model-selection module: each model carries its
+own bounded reasoning-effort choices and default, while one atomic selection
+crosses the Conn Action seam. The Codex adapter maps the current Thread model
+and reasoning metadata into that neutral selection, validates both against the
+live catalog, and sends `reasoning_effort` only through the reviewed
+`turn/start` field. The UI presents Model and Reasoning as independent menus,
+restores user-right and Harness-left transcript lanes, and makes the entire
+compact bar an expansion target.
 
 ## Required manual acceptance
 

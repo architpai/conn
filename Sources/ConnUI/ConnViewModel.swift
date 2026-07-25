@@ -38,11 +38,17 @@ public final class ConnViewModel: ObservableObject {
     @Published public private(set) var isPerformingAction = false
     @Published public var composerText = ""
     @Published public var selectedFollowUpModelID: ConnSessionModelID?
+    @Published public var selectedFollowUpReasoningEffortID:
+        ConnReasoningEffortID?
     @Published public var newSessionWorkspace = ""
     @Published public var newSessionPrompt = ""
     @Published public private(set) var sessionModelOptions:
         [ConnSessionModelOption] = []
     @Published public var selectedNewSessionModelID: ConnSessionModelID?
+    @Published public var selectedNewSessionReasoningEffortID:
+        ConnReasoningEffortID?
+    @Published public private(set) var currentSessionModelSelection:
+        ConnSessionModelSelection?
     @Published public private(set) var isLoadingSessionModels = false
     @Published public private(set) var sessionModelError: String?
     @Published public private(set) var compactNotificationBatch:
@@ -109,6 +115,22 @@ public final class ConnViewModel: ObservableObject {
         compactNotificationBatch == nil ? 44 : 92
     }
 
+    public var selectedFollowUpModel: ConnSessionModelOption? {
+        sessionModelOptions.first { $0.id == selectedFollowUpModelID }
+    }
+
+    public var selectedNewSessionModel: ConnSessionModelOption? {
+        sessionModelOptions.first { $0.id == selectedNewSessionModelID }
+    }
+
+    public var followUpReasoningEfforts: [ConnReasoningEffortOption] {
+        selectedFollowUpModel?.reasoningEfforts ?? []
+    }
+
+    public var newSessionReasoningEfforts: [ConnReasoningEffortOption] {
+        selectedNewSessionModel?.reasoningEfforts ?? []
+    }
+
     public var pickerResult: SessionPickerResult {
         SessionPickerPolicy.select(
             sessions: sessions,
@@ -155,8 +177,11 @@ public final class ConnViewModel: ObservableObject {
         selectedSessionID = sessionID
         showsSessionPicker = false
         selectedFollowUpModelID = nil
+        selectedFollowUpReasoningEffortID = nil
+        currentSessionModelSelection = nil
         actionError = nil
         actionNotice = nil
+        loadSessionModels()
     }
 
     public func requestRefresh(_ integrationID: IntegrationID) {
@@ -196,7 +221,10 @@ public final class ConnViewModel: ObservableObject {
             action = .followUp(
                 sessionID: selected.id,
                 text: text,
-                modelID: selectedFollowUpModelID
+                modelSelection: modelSelection(
+                    modelID: selectedFollowUpModelID,
+                    reasoningEffortID: selectedFollowUpReasoningEffortID
+                )
             )
         }
         perform(action, clearComposerOnAcceptance: true)
@@ -265,7 +293,10 @@ public final class ConnViewModel: ObservableObject {
     public func createSession() {
         guard let workspace = try? ConnWorkspacePath(newSessionWorkspace),
               let prompt = try? ConnActionText(newSessionPrompt),
-              let modelID = selectedNewSessionModelID,
+              let modelSelection = modelSelection(
+                modelID: selectedNewSessionModelID,
+                reasoningEffortID: selectedNewSessionReasoningEffortID
+              ),
               let integration = presentation?.integrations.first(where: {
                   $0.state.capabilities.supports(.createSession)
                       && $0.state.freshness == .live
@@ -278,20 +309,32 @@ public final class ConnViewModel: ObservableObject {
                 integrationID: integration.id,
                 workspacePath: workspace,
                 initialPrompt: prompt,
-                modelID: modelID
+                modelSelection: modelSelection
             ),
             clearNewSessionOnAcceptance: true
         )
     }
 
     public func loadSessionModels() {
-        guard !isLoadingSessionModels,
-              let integration = presentation?.integrations.first(where: {
-                  $0.state.capabilities.supports(.createSession)
-                      && $0.state.freshness == .live
-              }) else {
+        let selectedSessionID = selectedSession?.id
+        let integration = selectedSession.map(\.state.integration)
+            .flatMap { selectedIntegration in
+                presentation?.integrations.first {
+                    $0.id == selectedIntegration.id
+                        && $0.state.freshness == .live
+                }
+            }
+            ?? presentation?.integrations.first(where: {
+                $0.state.capabilities.supports(.createSession)
+                    && $0.state.freshness == .live
+            })
+        guard !isLoadingSessionModels, let integration else {
             sessionModelOptions = []
             selectedNewSessionModelID = nil
+            selectedNewSessionReasoningEffortID = nil
+            selectedFollowUpModelID = nil
+            selectedFollowUpReasoningEffortID = nil
+            currentSessionModelSelection = nil
             sessionModelError = "Models require a live Integration"
             return
         }
@@ -299,7 +342,10 @@ public final class ConnViewModel: ObservableObject {
         isLoadingSessionModels = true
         sessionModelError = nil
         Task { [weak self, coordinator] in
-            let result = await coordinator.sessionModels(for: integrationID)
+            let result = await coordinator.sessionModels(
+                for: integrationID,
+                sessionID: selectedSessionID
+            )
             guard let self else { return }
             isLoadingSessionModels = false
             guard result.outcome == .available,
@@ -307,18 +353,71 @@ public final class ConnViewModel: ObservableObject {
                   !catalog.options.isEmpty else {
                 sessionModelOptions = []
                 selectedNewSessionModelID = nil
+                selectedNewSessionReasoningEffortID = nil
+                selectedFollowUpModelID = nil
+                selectedFollowUpReasoningEffortID = nil
+                currentSessionModelSelection = nil
                 sessionModelError = result.outcome == .invalidated
                     ? "The Integration changed while loading models. Retry."
                     : "Models are unavailable from this Integration."
                 return
             }
             sessionModelOptions = catalog.options
-            if !catalog.options.contains(where: {
-                $0.id == selectedNewSessionModelID
-            }) {
-                selectedNewSessionModelID = catalog.defaultOptionID
-            }
+            currentSessionModelSelection = catalog.currentSelection
+            let defaultModelID = catalog.defaultOptionID
+            updateNewSessionModel(
+                catalog.options.contains(where: {
+                    $0.id == selectedNewSessionModelID
+                }) ? selectedNewSessionModelID : defaultModelID
+            )
+            let current = catalog.currentSelection
+                ?? defaultModelID.flatMap { modelID in
+                    catalog.options.first(where: { $0.id == modelID }).flatMap {
+                        $0.defaultReasoningEffortID.map {
+                            ConnSessionModelSelection(
+                                modelID: modelID,
+                                reasoningEffortID: $0
+                            )
+                        }
+                    }
+                }
+            updateFollowUpModel(current?.modelID)
+            selectedFollowUpReasoningEffortID =
+                current?.reasoningEffortID
         }
+    }
+
+    public func updateFollowUpModel(_ modelID: ConnSessionModelID?) {
+        selectedFollowUpModelID = modelID
+        selectedFollowUpReasoningEffortID = modelID.flatMap { selectedID in
+            sessionModelOptions.first(where: { $0.id == selectedID })?
+                .defaultReasoningEffortID
+        }
+    }
+
+    public func updateNewSessionModel(_ modelID: ConnSessionModelID?) {
+        selectedNewSessionModelID = modelID
+        selectedNewSessionReasoningEffortID = modelID.flatMap { selectedID in
+            sessionModelOptions.first(where: { $0.id == selectedID })?
+                .defaultReasoningEffortID
+        }
+    }
+
+    private func modelSelection(
+        modelID: ConnSessionModelID?,
+        reasoningEffortID: ConnReasoningEffortID?
+    ) -> ConnSessionModelSelection? {
+        guard let modelID, let reasoningEffortID,
+              sessionModelOptions.contains(where: {
+                  $0.id == modelID
+                      && $0.reasoningEfforts.contains {
+                          $0.id == reasoningEffortID
+                      }
+              }) else { return nil }
+        return .init(
+            modelID: modelID,
+            reasoningEffortID: reasoningEffortID
+        )
     }
 
     public func markSelectedOutcomeReviewed() {
@@ -417,7 +516,6 @@ public final class ConnViewModel: ObservableObject {
             case .accepted:
                 actionNotice = outcome.evidence ?? "Accepted"
                 if clearComposerOnAcceptance { composerText = "" }
-                if clearComposerOnAcceptance { selectedFollowUpModelID = nil }
                 if let clearQuestionDraft {
                     questionDrafts.removeValue(forKey: clearQuestionDraft)
                 }

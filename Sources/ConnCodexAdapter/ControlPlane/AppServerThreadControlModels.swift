@@ -122,19 +122,37 @@ public struct AppServerNewThreadModelOption: Equatable, Identifiable, Sendable {
     public let displayName: String
     public let detail: String
     public let isDefault: Bool
+    public let defaultReasoningEffort: String
+    public let supportedReasoningEfforts: [AppServerReasoningEffortOption]
 
     public init(
         id: String,
         model: String,
         displayName: String,
         detail: String,
-        isDefault: Bool
+        isDefault: Bool,
+        defaultReasoningEffort: String = "medium",
+        supportedReasoningEfforts: [AppServerReasoningEffortOption] = [
+            .init(reasoningEffort: "medium", description: "Medium")
+        ]
     ) {
         self.id = id
         self.model = model
         self.displayName = displayName
         self.detail = detail
         self.isDefault = isDefault
+        self.defaultReasoningEffort = defaultReasoningEffort
+        self.supportedReasoningEfforts = supportedReasoningEfforts
+    }
+}
+
+public struct AppServerReasoningEffortOption: Equatable, Sendable {
+    public let reasoningEffort: String
+    public let description: String
+
+    public init(reasoningEffort: String, description: String) {
+        self.reasoningEffort = reasoningEffort
+        self.description = description
     }
 }
 
@@ -267,6 +285,7 @@ public struct AppServerNewThreadIntent: Equatable, Sendable {
     public let initialPrompt: String
     public let modelID: String
     public let model: String
+    public let reasoningEffort: String?
     public let draftRevision: UInt64
 
     public init(
@@ -274,12 +293,14 @@ public struct AppServerNewThreadIntent: Equatable, Sendable {
         initialPrompt: String,
         modelID: String,
         model: String,
+        reasoningEffort: String? = nil,
         draftRevision: UInt64
     ) {
         self.workingDirectory = workingDirectory
         self.initialPrompt = initialPrompt
         self.modelID = modelID
         self.model = model
+        self.reasoningEffort = reasoningEffort
         self.draftRevision = draftRevision
     }
 }
@@ -316,6 +337,7 @@ public enum AppServerControlIntent: Equatable, Sendable {
         threadID: AppServerThreadID,
         text: String,
         model: String? = nil,
+        reasoningEffort: String? = nil,
         draftRevision: UInt64
     )
     case steer(

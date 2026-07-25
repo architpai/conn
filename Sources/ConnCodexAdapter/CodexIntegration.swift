@@ -24,6 +24,7 @@ public actor CodexIntegration: ConnIntegration {
     private let legacyHookRetirement: @Sendable () -> String?
     private let attentionRegistry = CodexAttentionRegistry()
     private let originRegistry = CodexOriginRegistry()
+    private let modelSelectionRegistry = CodexModelSelectionRegistry()
     private var runtime: AppServerMonitoringRuntime?
     private var runtimeTask: Task<Void, Never>?
     private var feedBootstrap: CodexFeedBootstrap?
@@ -63,11 +64,13 @@ public actor CodexIntegration: ConnIntegration {
         self.runtime = runtime
         let registry = attentionRegistry
         let origins = originRegistry
+        let modelSelections = modelSelectionRegistry
         let bootstrap = await MainActor.run {
             CodexFeedBootstrap(
                 generation: generation,
                 originRegistry: origins,
-                attentionRegistry: registry
+                attentionRegistry: registry,
+                modelSelectionRegistry: modelSelections
             )
         }
         feedBootstrap = bootstrap
@@ -123,14 +126,22 @@ public actor CodexIntegration: ConnIntegration {
                 "Opening Codex is composed by ConnApp, not an App Server action"
             )
 
-        case let .createSession(_, workspacePath, initialPrompt, modelID):
+        case let .createSession(_, workspacePath, initialPrompt, modelSelection):
             let catalog = await runtime.loadNewThreadModelCatalog()
             guard catalog.outcome == .available,
                   let option = catalog.catalog?.options.first(where: {
-                      $0.id == modelID.rawValue
+                      $0.id == modelSelection.modelID.rawValue
+                  }),
+                  option.supportedReasoningEfforts.contains(where: {
+                      $0.reasoningEffort
+                        == modelSelection.reasoningEffortID.rawValue
                   })
             else {
-                return outcome(for: action, .invalidated, "Selected Codex model is unavailable")
+                return outcome(
+                    for: action,
+                    .invalidated,
+                    "Selected Codex model or reasoning effort is unavailable"
+                )
             }
             await prepareDispatch(runtime)
             let result = await runtime.executeNewThread(.init(
@@ -138,6 +149,7 @@ public actor CodexIntegration: ConnIntegration {
                 initialPrompt: initialPrompt.value,
                 modelID: option.id,
                 model: option.model,
+                reasoningEffort: modelSelection.reasoningEffortID.rawValue,
                 draftRevision: actionGeneration
             ))
             if result.outcome == .accepted, let threadID = result.createdThreadID {
@@ -145,29 +157,38 @@ public actor CodexIntegration: ConnIntegration {
             }
             return outcome(for: action, result.outcome)
 
-        case let .followUp(sessionID, text, modelID):
+        case let .followUp(sessionID, text, modelSelection):
             let selectedModel: String?
-            if let modelID {
+            let selectedReasoningEffort: String?
+            if let modelSelection {
                 let catalog = await runtime.loadNewThreadModelCatalog()
                 guard catalog.outcome == .available,
                       let option = catalog.catalog?.options.first(where: {
-                          $0.id == modelID.rawValue
+                          $0.id == modelSelection.modelID.rawValue
+                      }),
+                      option.supportedReasoningEfforts.contains(where: {
+                          $0.reasoningEffort
+                            == modelSelection.reasoningEffortID.rawValue
                       }) else {
                     return outcome(
                         for: action,
                         .invalidated,
-                        "Selected Codex model is unavailable"
+                        "Selected Codex model or reasoning effort is unavailable"
                     )
                 }
                 selectedModel = option.model
+                selectedReasoningEffort =
+                    modelSelection.reasoningEffortID.rawValue
             } else {
                 selectedModel = nil
+                selectedReasoningEffort = nil
             }
             return await execute(
                 .followUp(
                     threadID: threadID(sessionID),
                     text: text.value,
                     model: selectedModel,
+                    reasoningEffort: selectedReasoningEffort,
                     draftRevision: actionGeneration
                 ),
                 action: action,
@@ -232,9 +253,24 @@ public actor CodexIntegration: ConnIntegration {
         }
     }
 
-    public func sessionModels() async -> ConnSessionModelCatalogResult {
+    public func sessionModels(
+        for sessionID: ConnSessionID?
+    ) async -> ConnSessionModelCatalogResult {
         guard let runtime else {
             return .init(outcome: .unavailable)
+        }
+        if let sessionID {
+            guard sessionID.integrationID == descriptor.id else {
+                return .init(outcome: .invalidated)
+            }
+            await runtime.requestThreadQualification(
+                sessionID.upstreamID.rawValue
+            )
+            for _ in 0..<3 where modelSelectionRegistry.selection(
+                for: .init(rawValue: sessionID.upstreamID.rawValue)
+            ) == nil {
+                try? await Task.sleep(for: .milliseconds(150))
+            }
         }
         let result = await runtime.loadNewThreadModelCatalog()
         guard result.outcome == .available, let catalog = result.catalog else {
@@ -242,6 +278,26 @@ public actor CodexIntegration: ConnIntegration {
                 outcome: result.outcome == .connectionInvalidated
                     ? .invalidated
                     : .unavailable
+            )
+        }
+        let currentProviderSelection = sessionID.flatMap {
+            modelSelectionRegistry.selection(
+                for: .init(rawValue: $0.upstreamID.rawValue)
+            )
+        }
+        let currentSelection: ConnSessionModelSelection? =
+            currentProviderSelection.flatMap { selection in
+            guard let model = catalog.options.first(where: {
+                $0.model == selection.model
+            }) else { return nil }
+            let effort = selection.reasoningEffort
+                ?? model.defaultReasoningEffort
+            guard model.supportedReasoningEfforts.contains(where: {
+                $0.reasoningEffort == effort
+            }) else { return nil }
+            return ConnSessionModelSelection(
+                modelID: .init(rawValue: model.id),
+                reasoningEffortID: .init(rawValue: effort)
             )
         }
         return .init(
@@ -253,11 +309,35 @@ public actor CodexIntegration: ConnIntegration {
                         id: .init(rawValue: $0.id),
                         displayName: $0.displayName,
                         detail: $0.detail.isEmpty ? nil : $0.detail,
-                        isDefault: $0.isDefault
+                        isDefault: $0.isDefault,
+                        reasoningEfforts: $0.supportedReasoningEfforts.map {
+                            .init(
+                                id: .init(rawValue: $0.reasoningEffort),
+                                displayName: Self.reasoningEffortLabel(
+                                    $0.reasoningEffort
+                                ),
+                                detail: $0.description
+                            )
+                        },
+                        defaultReasoningEffortID: .init(
+                            rawValue: $0.defaultReasoningEffort
+                        )
                     )
-                }
+                },
+                currentSelection: currentSelection
             )
         )
+    }
+
+    private nonisolated static func reasoningEffortLabel(
+        _ rawValue: String
+    ) -> String {
+        switch rawValue.lowercased() {
+        case "xhigh": "Extra high"
+        case "xlow": "Extra low"
+        default:
+            rawValue.replacingOccurrences(of: "_", with: " ").capitalized
+        }
     }
 
     /// Migration-edge inspection for the exact retired Sidequest plugin.
@@ -374,6 +454,30 @@ private final class CodexOriginRegistry: @unchecked Sendable {
     }
 }
 
+private final class CodexModelSelectionRegistry: @unchecked Sendable {
+    private let lock = NSLock()
+    private var selections:
+        [AppServerThreadID: AppServerThreadModelSelection] = [:]
+
+    func replace(
+        _ selections: [AppServerThreadID: AppServerThreadModelSelection]
+    ) {
+        lock.withLock {
+            self.selections = selections
+        }
+    }
+
+    func selection(
+        for threadID: AppServerThreadID
+    ) -> AppServerThreadModelSelection? {
+        lock.withLock { selections[threadID] }
+    }
+
+    func clear() {
+        lock.withLock { selections = [:] }
+    }
+}
+
 private final class CodexAttentionRegistry: @unchecked Sendable {
     private let lock = NSLock()
     private var generation: IntegrationConnectionGeneration?
@@ -425,6 +529,7 @@ private final class CodexFeedBootstrap {
     private let generation: IntegrationConnectionGeneration
     private let originRegistry: CodexOriginRegistry
     private let attentionRegistry: CodexAttentionRegistry
+    private let modelSelectionRegistry: CodexModelSelectionRegistry
     private let feedContinuation: AsyncStream<ConnIntegrationFeed>.Continuation
     let feeds: AsyncStream<ConnIntegrationFeed>
 
@@ -440,11 +545,13 @@ private final class CodexFeedBootstrap {
     init(
         generation: IntegrationConnectionGeneration,
         originRegistry: CodexOriginRegistry,
-        attentionRegistry: CodexAttentionRegistry
+        attentionRegistry: CodexAttentionRegistry,
+        modelSelectionRegistry: CodexModelSelectionRegistry
     ) {
         self.generation = generation
         self.originRegistry = originRegistry
         self.attentionRegistry = attentionRegistry
+        self.modelSelectionRegistry = modelSelectionRegistry
         var captured: AsyncStream<ConnIntegrationFeed>.Continuation!
         feeds = AsyncStream(bufferingPolicy: .bufferingOldest(1)) {
             captured = $0
@@ -469,6 +576,7 @@ private final class CodexFeedBootstrap {
             return
         }
         providerConnection = currentProviderConnection
+        modelSelectionRegistry.replace(update.threadModelSelections)
 
         let inventoryAuthority: InventoryAuthority =
             update.status.isThreadInventoryMembershipComplete ? .complete : .partial
@@ -565,6 +673,7 @@ private final class CodexFeedBootstrap {
         guard !isFinished else { return }
         isFinished = true
         attentionRegistry.clear()
+        modelSelectionRegistry.clear()
         updateContinuation?.finish()
         updateContinuation = nil
         feedContinuation.finish()
