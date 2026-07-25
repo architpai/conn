@@ -2,7 +2,7 @@
 
 Status: Offline gate complete; live acceptance and public release pending.
 
-The local candidate is Conn `0.2.0` build `6`, a continued Alpha release.
+The local candidate is Conn `0.2.0` build `7`, a continued Alpha release.
 Codex is the only supported Harness. Claude Code, Pi, OpenCode, and other
 Harness adapters are not included.
 
@@ -25,7 +25,7 @@ The built candidate is:
 ```text
 .build/conn-app/Conn.app
 CFBundleShortVersionString = 0.2.0
-CFBundleVersion = 6
+CFBundleVersion = 7
 signature = local ad-hoc
 notarization = not claimed
 ```
@@ -66,6 +66,13 @@ Conn wordmark inside the safe left wing, omits compact Integration status text
 that would render behind the camera housing, and reserves a tested 184-point
 center gap. External capsules retain their 350-point width and full status
 wording.
+
+Build 7 restores chronological Session history. The Codex projection remains
+newest-first for inventory and outcome decisions, but the Integration mapper
+now emits oldest-first Run blocks while retaining each Turn's authoritative
+Item order. This avoids the incorrect flat-array reversal that would put tool
+calls, reasoning, and assistant messages ahead of the user message that caused
+them.
 
 ## Required manual acceptance
 

@@ -609,7 +609,11 @@ package enum CodexProjectionMapper {
         integrationID: IntegrationID,
         connOriginated: Bool
     ) -> ConnSession {
-        let runs = thread.turns.map { turn in
+        // The legacy projection exposes Turns newest-first for row/outcome
+        // decisions. A transcript is the opposite: chronological Turn blocks,
+        // while each Turn's authoritative Item order must remain untouched.
+        let chronologicalTurns = thread.turns.reversed()
+        let runs = chronologicalTurns.map { turn in
             ConnRun(
                 id: .init(rawValue: turn.id.rawValue),
                 status: runStatus(turn.status),
@@ -617,7 +621,8 @@ package enum CodexProjectionMapper {
                 completedAt: turn.completedAt
             )
         }
-        let activities = thread.turns.reduce(into: [ConnActivity]()) { result, turn in
+        let activities = chronologicalTurns.reduce(into: [ConnActivity]()) {
+            result, turn in
             result.append(contentsOf: turn.items.map { item in
                 ConnActivity(
                     id: .init(rawValue: "\(turn.id.rawValue):\(item.id.rawValue)"),

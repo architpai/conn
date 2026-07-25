@@ -52,27 +52,61 @@ enum Phase3CodexIntegrationMappingTestCases {
                 createdAt: at(0),
                 updatedAt: at(2),
                 turnsAreAuthoritative: true,
-                turns: [.init(
-                    id: turnID,
-                    status: .inProgress,
-                    startedAt: at(1),
-                    items: [
-                        .init(
-                            id: .init(rawValue: "command-item"),
-                            kind: .commandExecution,
-                            status: .completed,
-                            startedAt: at(1),
-                            completedAt: at(2),
-                            presentation: .command("swift build")
-                        ),
-                        .init(
-                            id: .init(rawValue: "unknown-item"),
-                            kind: .unknown,
-                            status: .unknown,
-                            startedAt: at(2)
-                        ),
-                    ]
-                )]
+                turns: [
+                    .init(
+                        id: turnID,
+                        status: .inProgress,
+                        startedAt: at(1),
+                        items: [
+                            .init(
+                                id: .init(rawValue: "command-item"),
+                                kind: .commandExecution,
+                                status: .completed,
+                                startedAt: at(1),
+                                completedAt: at(2),
+                                presentation: .command("swift build")
+                            ),
+                            .init(
+                                id: .init(rawValue: "unknown-item"),
+                                kind: .unknown,
+                                status: .unknown,
+                                startedAt: at(2)
+                            ),
+                        ]
+                    ),
+                    .init(
+                        id: .init(rawValue: "codex-turn-2"),
+                        status: .completed,
+                        startedAt: at(3),
+                        completedAt: at(7),
+                        items: [
+                            .init(
+                                id: .init(rawValue: "user-item"),
+                                kind: .userMessage,
+                                status: .completed,
+                                startedAt: at(3)
+                            ),
+                            .init(
+                                id: .init(rawValue: "reasoning-item"),
+                                kind: .reasoning,
+                                status: .completed,
+                                startedAt: at(4)
+                            ),
+                            .init(
+                                id: .init(rawValue: "tool-item"),
+                                kind: .mcpToolCall,
+                                status: .completed,
+                                startedAt: at(5)
+                            ),
+                            .init(
+                                id: .init(rawValue: "agent-item"),
+                                kind: .agentMessage,
+                                status: .completed,
+                                startedAt: at(6)
+                            ),
+                        ]
+                    ),
+                ]
             )],
             threadFreshness: .live
         )))
@@ -153,17 +187,18 @@ enum Phase3CodexIntegrationMappingTestCases {
             session?.status == .waitingForAttention,
             "response-bearing Codex request maps to waiting-for-Attention status"
         )
-        suite.check(
-            session?.runs == [.init(
-                id: .init(rawValue: turnID.rawValue),
-                status: .inProgress,
-                startedAt: at(1)
-            )],
-            "evidence-backed Codex Turn maps to an optional Conn Run"
+        suite.checkEqual(
+            session?.runs.map(\.id.rawValue),
+            [turnID.rawValue, "codex-turn-2"],
+            "Codex Turns map to Conn Runs in oldest-first conversation order"
         )
-        suite.check(
-            session?.activities.map(\.kind) == [.command, .unknown],
-            "supported and unknown Codex Items map to bounded semantic Activities"
+        suite.checkEqual(
+            session?.activities.map(\.kind),
+            [
+                .command, .unknown,
+                .userMessage, .reasoning, .toolCall, .agentMessage,
+            ],
+            "Turns become chronological blocks without reversing their Item order"
         )
         suite.check(
             session?.activities.first?.summary == "swift build"

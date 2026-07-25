@@ -36,6 +36,8 @@ Continued alpha release.
   visible countdown and automatic expiry.
 - The built-in display header now preserves physical-notch safe wings while
   external displays retain the full compact status wording.
+- Session history now presents Turns oldest-first while preserving canonical
+  user, reasoning, tool, and assistant Item order inside each Turn.
 
 ### Fixed
 
