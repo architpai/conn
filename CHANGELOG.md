@@ -57,6 +57,8 @@ Continued alpha release.
 - Collapsed Runs retain a compact preview of the User message that initiated
   them and show their elapsed work time when the Integration supplies both
   start and completion timestamps.
+- The follow-up composer combines Model and Reasoning into one compact control;
+  a small popover retains independent, model-filtered selectors.
 
 ### Fixed
 

@@ -2,7 +2,7 @@
 
 Status: Offline gate complete; live acceptance and public release pending.
 
-The local candidate is Conn `0.2.0` build `13`, a continued Alpha release.
+The local candidate is Conn `0.2.0` build `14`, a continued Alpha release.
 Codex is the only supported Harness. Claude Code, Pi, OpenCode, and other
 Harness adapters are not included.
 
@@ -12,7 +12,7 @@ The following pass on 2026-07-26:
 
 - `swift build`;
 - all four required owner executables: 1,469 Codex-adapter assertions, 72
-  Domain assertions, 222 AppCore assertions, and 214 UI assertions;
+  Domain assertions, 222 AppCore assertions, and 216 UI assertions;
 - 14 ConnApp migration-edge assertions;
 - provider-boundary and schema-provenance verification;
 - release-inspection self-tests;
@@ -25,7 +25,7 @@ The built candidate is:
 ```text
 .build/conn-app/Conn.app
 CFBundleShortVersionString = 0.2.0
-CFBundleVersion = 13
+CFBundleVersion = 14
 signature = local ad-hoc
 notarization = not claimed
 ```
@@ -114,6 +114,12 @@ an elapsed `Worked for` label derived from neutral Run timestamps. Expanding
 still reveals the authoritative Activity sequence without duplicate previews.
 Message cards replace the failed triangular tail with asymmetric continuous
 corners, eliminating the visible lower-edge artifact on long content.
+
+Build 14 returns composer width to the message field by replacing the separate
+150-point Model and 110-point Reasoning menus with one 130-to-190-point
+composite control. Its closed label presents `Model · Reasoning`; its compact
+popover retains individually labeled selectors and the existing per-model
+Reasoning filtering.
 
 ## Required manual acceptance
 

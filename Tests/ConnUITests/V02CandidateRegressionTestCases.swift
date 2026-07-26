@@ -123,6 +123,24 @@ enum V02CandidateRegressionTestCases {
             .activityCard,
             "Tool activity remains visually distinct from speech"
         )
+        suite.checkEqual(
+            ConnCompositeModelControlPresentation.label(
+                modelName: "GPT-5.6-Sol",
+                reasoningName: "Medium",
+                isLoading: false
+            ),
+            "GPT-5.6-Sol · Medium",
+            "the compact composer control combines Model and Reasoning labels"
+        )
+        suite.checkEqual(
+            ConnCompositeModelControlPresentation.label(
+                modelName: nil,
+                reasoningName: nil,
+                isLoading: true
+            ),
+            "Loading models…",
+            "the compact composer control exposes model-loading state"
+        )
         var sleepCount = 0
         var expiredIDs: [String] = []
         let lifetime = ConnCompactNotificationLifetimeController { _ in

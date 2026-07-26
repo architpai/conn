@@ -12,6 +12,7 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
     @ObservedObject private var model: ConnViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var runExpansion: [ConnRunExpansionKey: Bool] = [:]
+    @State private var showsFollowUpModelPopover = false
     private let integrationSettingsContent: () -> IntegrationSettingsContent
 
     public init(
@@ -615,46 +616,7 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(spacing: 8) {
-                Picker(
-                    "Model",
-                    selection: Binding(
-                        get: { model.selectedFollowUpModelID },
-                        set: { model.updateFollowUpModel($0) }
-                    )
-                ) {
-                    ForEach(model.sessionModelOptions) { option in
-                        Text(option.displayName).tag(Optional(option.id))
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 150)
-                .disabled(
-                    model.isLoadingSessionModels
-                        || !canOverrideModel
-                )
-                .accessibilityLabel("Model for next message")
-                .help(
-                    canOverrideModel
-                        ? "Use the current model or override the next follow-up."
-                        : "Model changes are available when this Session is idle."
-                )
-                Picker(
-                    "Reasoning",
-                    selection: $model.selectedFollowUpReasoningEffortID
-                ) {
-                    ForEach(model.followUpReasoningEfforts) { effort in
-                        Text(effort.displayName).tag(Optional(effort.id))
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 110)
-                .disabled(
-                    model.isLoadingSessionModels
-                        || !canOverrideModel
-                )
-                .accessibilityLabel("Reasoning for next message")
+                followUpModelControl(canOverrideModel: canOverrideModel)
                 TextField("Follow up or steer…", text: $model.composerText)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { model.submitComposer() }
@@ -681,6 +643,87 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             }
         }
         .padding(12)
+    }
+
+    private func followUpModelControl(
+        canOverrideModel: Bool
+    ) -> some View {
+        let effortName = model.followUpReasoningEfforts.first {
+            $0.id == model.selectedFollowUpReasoningEffortID
+        }?.displayName
+        let label = ConnCompositeModelControlPresentation.label(
+            modelName: model.selectedFollowUpModel?.displayName,
+            reasoningName: effortName,
+            isLoading: model.isLoadingSessionModels
+        )
+        return Button {
+            showsFollowUpModelPopover.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .frame(minWidth: 130, idealWidth: 170, maxWidth: 190)
+        .disabled(model.isLoadingSessionModels || !canOverrideModel)
+        .accessibilityLabel("Model and reasoning for next message")
+        .accessibilityValue(label)
+        .help(
+            canOverrideModel
+                ? "Choose the model and reasoning effort for the next follow-up."
+                : "Model changes are available when this Session is idle."
+        )
+        .popover(isPresented: $showsFollowUpModelPopover) {
+            followUpModelPopover
+        }
+    }
+
+    private var followUpModelPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Model & Reasoning")
+                .font(.system(size: 12, weight: .semibold))
+            Picker(
+                "Model",
+                selection: Binding(
+                    get: { model.selectedFollowUpModelID },
+                    set: { model.updateFollowUpModel($0) }
+                )
+            ) {
+                ForEach(model.sessionModelOptions) { option in
+                    Text(option.displayName).tag(Optional(option.id))
+                }
+            }
+            .pickerStyle(.menu)
+            Picker(
+                "Reasoning",
+                selection: $model.selectedFollowUpReasoningEffortID
+            ) {
+                ForEach(model.followUpReasoningEfforts) { effort in
+                    Text(effort.displayName).tag(Optional(effort.id))
+                }
+            }
+            .pickerStyle(.menu)
+            HStack {
+                Spacer()
+                Button("Done") {
+                    showsFollowUpModelPopover = false
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .padding(14)
+        .frame(width: 260)
     }
 
     private var settings: some View {
