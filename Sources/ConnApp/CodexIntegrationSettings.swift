@@ -211,7 +211,7 @@ struct CodexIntegrationSettingsView: View {
             }
 
             Text(
-                "Harness attribution uses the text badge “Codex” in this alpha. OpenAI’s mark remains reserved until the exact in-product placement clears the current brand terms."
+                "Harness attribution uses the installed OpenAI Codex/ChatGPT app icon, with “Codex” retained as its accessible Integration label."
             )
             .font(.system(size: 9))
             .foregroundStyle(.tertiary)

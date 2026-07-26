@@ -74,6 +74,11 @@ Continued alpha release.
   Domain and show the full Harness answer in a completed Run summary.
 - Replace speech-bubble tails with clean asymmetric continuous corners so long
   messages no longer produce a lower-edge geometry artifact.
+- Restore standard macOS Edit responder commands so copy, paste, cut, undo,
+  redo, and select-all work in the follow-up composer and other text fields.
+- Replace the ambiguous `C` Harness fallback with the installed OpenAI
+  Codex/ChatGPT application icon while retaining `Codex` as the accessible
+  Integration label.
 
 ### Known limitations
 

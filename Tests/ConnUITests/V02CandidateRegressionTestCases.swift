@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import ConnAppCore
 import ConnUI
@@ -5,6 +6,29 @@ import ConnUI
 enum V02CandidateRegressionTestCases {
     @MainActor
     static func run(into suite: inout TestSuite) async {
+        let applicationMenu = ConnApplicationMenu.make()
+        let editMenu = applicationMenu.item(withTitle: "Edit")?.submenu
+        let copyItem = editMenu?.item(withTitle: "Copy")
+        let pasteItem = editMenu?.item(withTitle: "Paste")
+        suite.checkEqual(
+            copyItem?.keyEquivalent,
+            "c",
+            "the app menu routes Command-C through the focused text responder"
+        )
+        suite.check(
+            copyItem?.action == #selector(NSText.copy(_:)),
+            "Copy uses the standard macOS responder action"
+        )
+        suite.checkEqual(
+            pasteItem?.keyEquivalent,
+            "v",
+            "the app menu routes Command-V through the focused text responder"
+        )
+        suite.check(
+            pasteItem?.action == #selector(NSText.paste(_:)),
+            "Paste uses the standard macOS responder action"
+        )
+
         let displayFrame = CGRect(x: 0, y: 0, width: 1512, height: 982)
         let visibleFrame = CGRect(x: 0, y: 0, width: 1512, height: 949)
         let builtIn = ConnPanelFramePolicy.decide(

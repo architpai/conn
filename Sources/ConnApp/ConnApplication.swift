@@ -30,6 +30,7 @@ private enum ConnApplication {
         guard !activateExistingInstance() else { return }
 
         let application = NSApplication.shared
+        application.mainMenu = ConnApplicationMenu.make()
         let delegate = ConnAppDelegate(singleInstanceClaim: singleInstanceClaim)
         application.delegate = delegate
         application.run()
@@ -99,8 +100,10 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
                 integrations: [codex],
                 checkpointStore: store
             )
+            let codexHarnessAsset = Self.registerCodexHarnessAsset()
             let viewModel = ConnViewModel(
                 coordinator: coordinator,
+                harnessAssets: [CodexIntegrationIdentity.harnessID: codexHarnessAsset],
                 openHarness: Self.openCodex
             )
             let settingsModel = CodexIntegrationSettingsModel(integration: codex)
@@ -232,5 +235,16 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    private static func registerCodexHarnessAsset() -> String {
+        let assetName = NSImage.Name("CodexHarness")
+        if let applicationURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.openai.codex"
+        ) {
+            let image = NSWorkspace.shared.icon(forFile: applicationURL.path)
+            image.setName(assetName)
+        }
+        return assetName
     }
 }

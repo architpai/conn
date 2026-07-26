@@ -121,6 +121,14 @@ composite control. Its closed label presents `Model · Reasoning`; its compact
 popover retains individually labeled selectors and the existing per-model
 Reasoning filtering.
 
+Build 15 restores the standard macOS Edit responder chain for Conn's
+accessory-panel text fields. A provider-neutral application menu now supplies
+Undo, Redo, Cut, Copy, Paste, and Select All, with regression coverage for the
+exact Command-C and Command-V selectors. The Codex composition root also maps
+the Integration's `openai` Harness identity to the installed OpenAI
+Codex/ChatGPT application icon, eliminating the ambiguous first-letter `C`
+fallback while preserving `Codex` as the accessible label.
+
 ## Required manual acceptance
 
 The candidate must still be exercised in the running app for ordinary Session

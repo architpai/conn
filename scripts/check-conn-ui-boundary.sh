@@ -24,6 +24,8 @@ rg -q 'ConnPanelController<IntegrationSettingsContent: View>' \
 rg -q 'CodexIntegration\(' Sources/ConnApp/ConnApplication.swift
 rg -q 'ConnIntegrationCoordinator\(' Sources/ConnApp/ConnApplication.swift
 rg -q 'CodexIntegrationSettingsView' Sources/ConnApp/ConnApplication.swift
+rg -q 'harnessAssets: \[CodexIntegrationIdentity\.harnessID:' \
+    Sources/ConnApp/ConnApplication.swift
 
 test ! -e Sources/ConnApp/ConnViewModel.swift
 test ! -e Sources/ConnApp/ConnSurfaceView.swift
