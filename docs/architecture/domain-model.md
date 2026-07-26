@@ -2,6 +2,11 @@
 
 Conn is a notch-anchored macOS companion that lets people supervise Codex work while keeping their attention on other activities.
 
+This document describes the currently shipped v0.1 Codex/App Server model.
+The accepted provider-neutral v0.2 vocabulary is in
+[`CONTEXT.md`](../../CONTEXT.md), with the migration sequence in the
+[v0.2 architecture plan](./conn-v0.2-provider-neutral-plan.md).
+
 This vocabulary documents the product and architecture boundaries used by the
 Conn codebase. In particular, Conn observes and controls supported operations;
 it does not own Codex threads or their lifecycle.
@@ -67,6 +72,10 @@ _Avoid_: Claiming discovery of every local thread, lifecycle ownership
 **Notch Surface**:
 The compact and expandable top-center interface used to supervise Connected Threads.
 _Avoid_: Main window, dashboard, floating widget
+
+**Compact Shelf**:
+A temporary latest-state presentation within the Notch Surface for an actionable Permission Request or recent user-facing Codex activity.
+_Avoid_: Notification banner, notification queue, Activity Timeline, expanded Attention State
 
 **Idle Handle**:
 The minimal Notch Surface shown when no Active Thread exists so Conn remains reachable.
@@ -173,6 +182,13 @@ _Avoid_: Codex failure, automatic trust bypass
 - **Subagent Activity** nests only when App Server supplies stable identity and parentage
 - Subagent **Attention Requests** bubble to their top-level thread when grounded
 - The **Notch Surface** summarizes Active Threads and becomes an **Attention State** for unresolved attention
+- The **Compact Shelf** temporarily presents an actionable Permission Request or recent user-facing Codex activity while the Notch Surface remains compact
+- Distinct Permission Requests remain separately attributed in a bounded **Compact Shelf** stack; overflow opens the full Attention State
+- Actionable Permission Requests take precedence over Codex activity in the **Compact Shelf**
+- The **Compact Shelf** does not guarantee delivery or replay; the Activity Timeline remains the historical record
+- A Permission Request remains in the **Compact Shelf** until resolved or superseded; Codex activity remains only for a bounded reading interval
+- After presentation pause or loss of current connection authority, historical Codex activity does not replay in the **Compact Shelf**, but a current unresolved Permission Request may surface when authority returns
+- When an **Attention Request** cannot be handled safely in the **Compact Shelf**, the Notch Surface expands into the **Attention State**
 - An **Idle Handle** keeps the Notch Surface reachable when no Active Thread exists
 - A Codex Thread has a latest observed **Codex Activity**, expressed through an **Activity Label** and **Status Indicator**
 - Selecting a thread reveals its **Activity Timeline**
