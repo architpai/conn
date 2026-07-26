@@ -3,61 +3,6 @@ import ConnAppCore
 import ConnDomain
 import SwiftUI
 
-private struct ConnChatBubbleShape: Shape {
-    enum Tail {
-        case leading
-        case trailing
-    }
-
-    let tail: Tail
-
-    func path(in rect: CGRect) -> Path {
-        let tailWidth: CGFloat = 7
-        let body = switch tail {
-        case .leading:
-            CGRect(
-                x: rect.minX + tailWidth,
-                y: rect.minY,
-                width: max(0, rect.width - tailWidth),
-                height: rect.height
-            )
-        case .trailing:
-            CGRect(
-                x: rect.minX,
-                y: rect.minY,
-                width: max(0, rect.width - tailWidth),
-                height: rect.height
-            )
-        }
-        var path = Path(
-            roundedRect: body,
-            cornerRadius: 14,
-            style: .continuous
-        )
-        let tailTop = max(body.minY + 14, body.maxY - 18)
-        let tailBottom = body.maxY - 4
-        switch tail {
-        case .leading:
-            path.move(to: CGPoint(x: body.minX + 2, y: tailTop))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.minX, y: tailBottom),
-                control: CGPoint(x: body.minX, y: tailBottom - 4)
-            )
-            path.addLine(to: CGPoint(x: body.minX + 10, y: tailBottom - 1))
-            path.closeSubpath()
-        case .trailing:
-            path.move(to: CGPoint(x: body.maxX - 2, y: tailTop))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.maxX, y: tailBottom),
-                control: CGPoint(x: body.maxX, y: tailBottom - 4)
-            )
-            path.addLine(to: CGPoint(x: body.maxX - 10, y: tailBottom - 1))
-            path.closeSubpath()
-        }
-        return path
-    }
-}
-
 private struct ConnRunExpansionKey: Hashable {
     let sessionID: ConnSessionID
     let runID: RunID
@@ -390,46 +335,83 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                 ForEach(run.activities) { activity in
                     activityRow(activity)
                 }
+                if let workedForLabel = run.workedForLabel {
+                    runDurationFooter(workedForLabel)
+                }
             }
             .padding(.top, 10)
         } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 7) {
-                    Image(systemName: run.isCollapsedByDefault
-                        ? "checkmark.circle.fill"
-                        : "waveform.path")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(
-                            run.isCollapsedByDefault ? .green : .secondary
+            VStack(alignment: .leading, spacing: 10) {
+                if !isExpanded.wrappedValue,
+                   let userMessage = run.triggeringUserMessage {
+                    compactTriggeringMessage(userMessage)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: run.isCollapsedByDefault
+                            ? "checkmark.circle.fill"
+                            : "waveform.path")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(
+                                run.isCollapsedByDefault ? .green : .secondary
+                            )
+                        Text(run.title)
+                            .font(.system(size: 13, weight: .semibold))
+                        Spacer(minLength: 0)
+                        Text(
+                            run.activities.count == 1
+                                ? "1 item"
+                                : "\(run.activities.count) items"
                         )
-                    Text(run.title)
-                        .font(.system(size: 10.5, weight: .semibold))
-                    Spacer(minLength: 0)
-                    Text(
-                        run.activities.count == 1
-                            ? "1 item"
-                            : "\(run.activities.count) items"
-                    )
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.secondary)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    }
+                    if !isExpanded.wrappedValue, let summary = run.summary {
+                        Text(summary)
+                            .font(.system(size: 12.5))
+                            .lineSpacing(3)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                    if !isExpanded.wrappedValue,
+                       let workedForLabel = run.workedForLabel {
+                        runDurationFooter(workedForLabel)
+                    }
                 }
-                if !isExpanded.wrappedValue, let summary = run.summary {
-                    Text(summary)
-                        .font(.system(size: 12))
-                        .lineSpacing(2)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    Color.white.opacity(0.045),
+                    in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+                )
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 9)
-            .background(
-                Color.white.opacity(0.03),
-                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-            )
         }
         .tint(.secondary)
+    }
+
+    private func compactTriggeringMessage(_ message: String) -> some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 88)
+            Text(message)
+                .font(.system(size: 12))
+                .multilineTextAlignment(.trailing)
+                .lineLimit(4)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 9)
+                .background(
+                    Color.accentColor.opacity(0.16),
+                    in: messageBubbleShape(.outgoingBubble)
+                )
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("You, \(message)")
+    }
+
+    private func runDurationFooter(_ label: String) -> some View {
+        Label(label, systemImage: "clock")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
     }
 
     private func sessionHeader(_ session: ConnSessionPresentation) -> some View {
@@ -498,7 +480,7 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                 isUser
                     ? Color.accentColor.opacity(0.18)
                     : Color.white.opacity(isSpeech ? 0.07 : 0.035),
-                in: activityShape(style)
+                in: messageBubbleShape(style)
             )
             .accessibilityElement(children: .combine)
             if !isUser {
@@ -508,12 +490,24 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func activityShape(_ style: ConnTranscriptStyle) -> AnyShape {
+    private func messageBubbleShape(_ style: ConnTranscriptStyle) -> AnyShape {
         switch style {
         case .incomingBubble:
-            AnyShape(ConnChatBubbleShape(tail: .leading))
+            AnyShape(UnevenRoundedRectangle(
+                topLeadingRadius: 14,
+                bottomLeadingRadius: 4,
+                bottomTrailingRadius: 14,
+                topTrailingRadius: 14,
+                style: .continuous
+            ))
         case .outgoingBubble:
-            AnyShape(ConnChatBubbleShape(tail: .trailing))
+            AnyShape(UnevenRoundedRectangle(
+                topLeadingRadius: 14,
+                bottomLeadingRadius: 14,
+                bottomTrailingRadius: 4,
+                topTrailingRadius: 14,
+                style: .continuous
+            ))
         case .activityCard:
             AnyShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }

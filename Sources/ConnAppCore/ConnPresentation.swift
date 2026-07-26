@@ -64,20 +64,26 @@ public struct ConnRunPresentation: Equatable, Identifiable, Sendable {
     public var id: RunID { run.id }
     public let run: ConnRun
     public let title: String
+    public let triggeringUserMessage: String?
     public let summary: String?
+    public let workedForLabel: String?
     public let activities: [ConnActivityPresentation]
     public let isCollapsedByDefault: Bool
 
     public init(
         run: ConnRun,
         title: String,
+        triggeringUserMessage: String? = nil,
         summary: String?,
+        workedForLabel: String? = nil,
         activities: [ConnActivityPresentation],
         isCollapsedByDefault: Bool
     ) {
         self.run = run
         self.title = title
+        self.triggeringUserMessage = triggeringUserMessage
         self.summary = summary
+        self.workedForLabel = workedForLabel
         self.activities = activities
         self.isCollapsedByDefault = isCollapsedByDefault
     }
@@ -298,9 +304,13 @@ public enum ConnPresentationBuilder {
                 return .init(
                     run: run,
                     title: runTitle(run.status),
+                    triggeringUserMessage: runActivities.first {
+                        $0.activity.kind == .userMessage
+                    }?.detail,
                     summary: runActivities.last {
                         $0.activity.kind == .agentMessage
                     }?.detail,
+                    workedForLabel: workedForLabel(run),
                     activities: runActivities,
                     isCollapsedByDefault: run.status == .completed
                 )
@@ -325,6 +335,30 @@ public enum ConnPresentationBuilder {
         case .failed: "Failed Run"
         case .unknown: "Run"
         }
+    }
+
+    private static func workedForLabel(_ run: ConnRun) -> String? {
+        guard let startedAt = run.startedAt,
+              let completedAt = run.completedAt,
+              completedAt >= startedAt else {
+            return nil
+        }
+        let totalSeconds = max(
+            1,
+            Int(completedAt.timeIntervalSince(startedAt).rounded(.down))
+        )
+        let hours = totalSeconds / 3_600
+        let minutes = (totalSeconds % 3_600) / 60
+        let seconds = totalSeconds % 60
+        let duration: String
+        if hours > 0 {
+            duration = minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+        } else if minutes > 0 {
+            duration = "\(minutes)m \(seconds)s"
+        } else {
+            duration = "\(seconds)s"
+        }
+        return "Worked for \(duration)"
     }
 
     private static func visualState(

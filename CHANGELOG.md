@@ -54,6 +54,9 @@ Continued alpha release.
   tool calls, and other operational Activities remain distinct cards.
 - Completed Runs collapse into provider-neutral summary blocks and expand to
   reveal their complete chronological Activity sequence.
+- Collapsed Runs retain a compact preview of the User message that initiated
+  them and show their elapsed work time when the Integration supplies both
+  start and completion timestamps.
 
 ### Fixed
 
@@ -67,6 +70,8 @@ Continued alpha release.
   ambiguous `Current model` placeholder.
 - Preserve multiline user and Harness message content through the neutral
   Domain and show the full Harness answer in a completed Run summary.
+- Replace speech-bubble tails with clean asymmetric continuous corners so long
+  messages no longer produce a lower-edge geometry artifact.
 
 ### Known limitations
 

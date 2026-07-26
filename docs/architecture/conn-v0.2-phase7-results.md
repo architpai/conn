@@ -2,17 +2,17 @@
 
 Status: Offline gate complete; live acceptance and public release pending.
 
-The local candidate is Conn `0.2.0` build `12`, a continued Alpha release.
+The local candidate is Conn `0.2.0` build `13`, a continued Alpha release.
 Codex is the only supported Harness. Claude Code, Pi, OpenCode, and other
 Harness adapters are not included.
 
 ## Offline evidence
 
-The following pass on 2026-07-25:
+The following pass on 2026-07-26:
 
 - `swift build`;
 - all four required owner executables: 1,469 Codex-adapter assertions, 72
-  Domain assertions, 220 AppCore assertions, and 214 UI assertions;
+  Domain assertions, 222 AppCore assertions, and 214 UI assertions;
 - 14 ConnApp migration-edge assertions;
 - provider-boundary and schema-provenance verification;
 - release-inspection self-tests;
@@ -25,7 +25,7 @@ The built candidate is:
 ```text
 .build/conn-app/Conn.app
 CFBundleShortVersionString = 0.2.0
-CFBundleVersion = 12
+CFBundleVersion = 13
 signature = local ad-hoc
 notarization = not claimed
 ```
@@ -107,6 +107,13 @@ default to collapsed summary blocks derived from their last Harness message
 and expand to their chronological Activities. Conversational content now
 preserves multiline text through the Domain's bounded action-text limit, so a
 completed Run summary is no longer reduced to its first line.
+
+Build 13 makes that compressed history skimmable: each collapsed Run retains a
+four-line preview of its triggering User message, its full Harness summary, and
+an elapsed `Worked for` label derived from neutral Run timestamps. Expanding
+still reveals the authoritative Activity sequence without duplicate previews.
+Message cards replace the failed triangular tail with asymmetric continuous
+corners, eliminating the visible lower-edge artifact on long content.
 
 ## Required manual acceptance
 

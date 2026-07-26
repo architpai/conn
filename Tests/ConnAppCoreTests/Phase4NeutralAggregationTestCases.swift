@@ -33,7 +33,12 @@ enum Phase4NeutralAggregationTestCases {
             id: sessionID,
             title: "Completed run presentation",
             status: .completed,
-            runs: [.init(id: runID, status: .completed)],
+            runs: [.init(
+                id: runID,
+                status: .completed,
+                startedAt: at(1),
+                completedAt: at(66)
+            )],
             activities: [
                 .init(
                     id: .init(rawValue: "completed-run:user"),
@@ -78,6 +83,16 @@ enum Phase4NeutralAggregationTestCases {
             presentation.sessions.first?.runs.first?.summary,
             fullAnswer,
             "completed Run presentation preserves the full multiline answer"
+        )
+        suite.checkEqual(
+            presentation.sessions.first?.runs.first?.triggeringUserMessage,
+            "Question",
+            "collapsed Run presentation preserves its triggering User message"
+        )
+        suite.checkEqual(
+            presentation.sessions.first?.runs.first?.workedForLabel,
+            "Worked for 1m 5s",
+            "completed Run presentation derives a readable elapsed duration"
         )
         suite.check(
             presentation.sessions.first?.runs.first?.isCollapsedByDefault == true,
