@@ -5,6 +5,7 @@ import Foundation
 import ConnAppCore
 import ConnCodexAdapter
 import ConnDomain
+import ConnPiAdapter
 import ConnUI
 
 @main
@@ -66,8 +67,9 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: ConnIntegrationCoordinator?
     private var viewModel: ConnViewModel?
     private var settingsModel: CodexIntegrationSettingsModel?
+    private var piSettingsModel: PiIntegrationSettingsModel?
     private var panelController:
-        ConnPanelController<CodexIntegrationSettingsView>?
+        ConnPanelController<ConnIntegrationSettingsView>?
     private var globalHotKey: GlobalHotKey?
     private var observers: [NSObjectProtocol] = []
 
@@ -97,8 +99,21 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
                 ),
                 legacyHookRetirement: Self.retireLegacyHooks
             )
+            let pi = PiExternalIntegration.userDefault(
+                enabled: UserDefaults.standard.bool(
+                    forKey: PiIntegrationSettingsModel.enabledKey
+                ),
+                features: .init(
+                    questionsEnabled: UserDefaults.standard.bool(
+                        forKey: PiIntegrationSettingsModel.questionsKey
+                    ),
+                    approvalsEnabled: UserDefaults.standard.bool(
+                        forKey: PiIntegrationSettingsModel.approvalsKey
+                    )
+                )
+            )
             let coordinator = try ConnIntegrationCoordinator(
-                integrations: [codex],
+                integrations: [codex, pi],
                 checkpointStore: store
             )
             let codexHarnessAssets = Self.registerCodexHarnessAsset().map {
@@ -126,18 +141,27 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
                 sessionOpener: sessionOpener
             )
             let settingsModel = CodexIntegrationSettingsModel(integration: codex)
+            let piSettingsModel = PiIntegrationSettingsModel(
+                integration: pi,
+                coordinator: coordinator
+            )
             let panel = ConnPanelController(model: viewModel) {
-                CodexIntegrationSettingsView(model: settingsModel)
+                ConnIntegrationSettingsView(
+                    codex: settingsModel,
+                    pi: piSettingsModel
+                )
             }
             self.coordinator = coordinator
             self.viewModel = viewModel
             self.settingsModel = settingsModel
+            self.piSettingsModel = piSettingsModel
             panelController = panel
 
             configureGlobalToggle(panel: panel, model: viewModel)
             observeSystemLifecycle(panel: panel)
             viewModel.start()
             settingsModel.refresh()
+            piSettingsModel.refresh()
         } catch {
             ConnApplication.showStartupError(
                 "The v0.2 Integration runtime could not be initialized. \(error.localizedDescription)"
@@ -151,6 +175,7 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
         globalHotKey?.invalidate()
         viewModel?.stop()
         settingsModel?.cancel()
+        piSettingsModel?.cancel()
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
@@ -160,7 +185,7 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureGlobalToggle(
-        panel: ConnPanelController<CodexIntegrationSettingsView>,
+        panel: ConnPanelController<ConnIntegrationSettingsView>,
         model: ConnViewModel
     ) {
         let hotKey = GlobalHotKey { [weak panel] in
@@ -177,7 +202,7 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func observeSystemLifecycle(
-        panel: ConnPanelController<CodexIntegrationSettingsView>
+        panel: ConnPanelController<ConnIntegrationSettingsView>
     ) {
         let workspace = NSWorkspace.shared.notificationCenter
         observers.append(workspace.addObserver(

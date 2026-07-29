@@ -292,12 +292,21 @@ public actor ConnIntegrationCoordinator {
     ) async -> ConnSessionModelCatalogResult {
         guard let integration = integrations[integrationID],
               let projection = projections[integrationID],
-              projection.freshness == .live,
-              projection.capabilities.supports(.createSession) else {
+              projection.freshness == .live else {
             return .init(outcome: .unavailable)
         }
         guard sessionID == nil || sessionID?.integrationID == integrationID else {
             return .init(outcome: .invalidated)
+        }
+        if let sessionID {
+            guard projection.capabilities.supports(.followUp),
+                  projection.hasCurrentAuthority(for: sessionID) else {
+                return .init(outcome: .unavailable)
+            }
+        } else {
+            guard projection.capabilities.supports(.createSession) else {
+                return .init(outcome: .unavailable)
+            }
         }
         let result = await integration.sessionModels(for: sessionID)
         guard result.catalog?.integrationID == integrationID || result.catalog == nil else {

@@ -142,6 +142,16 @@ executable="$app_bundle/Contents/MacOS/Conn"
   exit 1
 }
 
+pi_resource_bundle="$app_bundle/Contents/Resources/Conn_ConnPiAdapter.bundle"
+[[ -d "$pi_resource_bundle" && ! -L "$pi_resource_bundle" ]] || {
+  print -u2 "Conn release is missing its Pi adapter resource bundle."
+  exit 1
+}
+[[ -s "$pi_resource_bundle/index.ts" && ! -L "$pi_resource_bundle/index.ts" ]] || {
+  print -u2 "Conn release is missing its regular bundled Pi extension."
+  exit 1
+}
+
 for distribution_document in LICENSE NOTICE ACKNOWLEDGEMENTS.md; do
   document_path="$app_bundle/Contents/Resources/$distribution_document"
   [[ -s "$document_path" && ! -L "$document_path" ]] || {

@@ -9,6 +9,8 @@ enum PiBrokerHandshakeTestCases {
         acceptsExactAuthenticatedHandshake(into: &suite)
         rejectsUntrustedOrMalformedFrames(into: &suite)
         rejectsOversizedFrames(into: &suite)
+        decodesClosedStateAndResponseFrames(into: &suite)
+        encodesOnlyClosedSemanticCommands(into: &suite)
     }
 
     private static func acceptsExactAuthenticatedHandshake(
@@ -81,6 +83,41 @@ enum PiBrokerHandshakeTestCases {
             suite.check(true, "oversized broker frame failed closed")
         } catch {
             suite.fail("oversized frame returned the wrong error: \(error)")
+        }
+    }
+
+    private static func decodesClosedStateAndResponseFrames(
+        into suite: inout TestSuite
+    ) {
+        let data = Data(
+            #"{"type":"response","id":"command-1","success":true,"state":{"sessionId":"session-1","sessionName":"Work","cwd":"/tmp/project","isIdle":true,"hasPendingMessages":false,"lastEvent":"agent_settled","activeToolCount":0,"modelProvider":"openai-codex","modelId":"gpt-5.4-mini","modelName":"GPT-5.4 mini","thinking":"low"}}"#.utf8
+        )
+        do {
+            guard case let .response(response) = try PiBrokerMessageDecoder.decode(data)
+            else {
+                suite.fail("correlated response frame must keep its closed discriminator")
+                return
+            }
+            suite.check(response.id == "command-1", "response correlation ID decodes exactly")
+            suite.check(response.state.isIdle, "effective Pi state accompanies acknowledgement")
+        } catch {
+            suite.fail("valid response frame failed to decode: \(error)")
+        }
+    }
+
+    private static func encodesOnlyClosedSemanticCommands(
+        into suite: inout TestSuite
+    ) {
+        do {
+            let data = try PiBrokerCommandEncoder.encode(
+                .followUp(id: "command-2", message: "continue")
+            )
+            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            suite.check(object?["type"] as? String == "follow_up", "follow-up uses one closed command")
+            suite.check(object?["message"] as? String == "continue", "bounded message is preserved")
+            suite.check(object?["method"] == nil, "no arbitrary provider method escape hatch is encoded")
+        } catch {
+            suite.fail("closed command encoding failed: \(error)")
         }
     }
 }

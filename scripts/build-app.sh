@@ -36,6 +36,7 @@ done
 swift build --package-path "$repo_root" --configuration "$configuration" --product Conn
 bin_dir="$(swift build --package-path "$repo_root" --configuration "$configuration" --show-bin-path)"
 executable="$bin_dir/Conn"
+pi_resource_bundle="$bin_dir/Conn_ConnPiAdapter.bundle"
 info_plist="$repo_root/ConnApp/Resources/Info.plist"
 app_icon="$repo_root/ConnApp/Resources/AppIcon.icns"
 shared_desktop_prompt="$repo_root/docs/shared-desktop-agent-prompt.md"
@@ -45,6 +46,14 @@ acknowledgements_file="$repo_root/ACKNOWLEDGEMENTS.md"
 app_bundle="$output_dir/Conn.app"
 
 [[ -x "$executable" ]] || { print -u2 "Missing Conn executable: $executable"; exit 1; }
+[[ -d "$pi_resource_bundle" && ! -L "$pi_resource_bundle" ]] || {
+  print -u2 "Missing Conn Pi adapter resource bundle: $pi_resource_bundle"
+  exit 1
+}
+[[ -s "$pi_resource_bundle/index.ts" && ! -L "$pi_resource_bundle/index.ts" ]] || {
+  print -u2 "Missing bundled Pi extension: $pi_resource_bundle/index.ts"
+  exit 1
+}
 [[ -f "$info_plist" ]] || { print -u2 "Missing app Info.plist: $info_plist"; exit 1; }
 [[ -f "$app_icon" ]] || { print -u2 "Missing app icon: $app_icon"; exit 1; }
 [[ -f "$shared_desktop_prompt" ]] || { print -u2 "Missing Shared Desktop setup prompt: $shared_desktop_prompt"; exit 1; }
@@ -55,6 +64,9 @@ app_bundle="$output_dir/Conn.app"
 rm -rf -- "$app_bundle"
 install -d -m 0755 "$app_bundle/Contents/MacOS" "$app_bundle/Contents/Resources"
 install -m 0755 "$executable" "$app_bundle/Contents/MacOS/Conn"
+ditto \
+  "$pi_resource_bundle" \
+  "$app_bundle/Contents/Resources/Conn_ConnPiAdapter.bundle"
 install -m 0644 "$info_plist" "$app_bundle/Contents/Info.plist"
 install -m 0644 "$app_icon" "$app_bundle/Contents/Resources/AppIcon.icns"
 install -m 0644 "$shared_desktop_prompt" "$app_bundle/Contents/Resources/shared-desktop-agent-prompt.md"

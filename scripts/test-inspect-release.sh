@@ -6,15 +6,30 @@ test_root="$(mktemp -d "${TMPDIR:-/tmp}/conn-inspect-test.XXXXXX")"
 trap 'rm -rf -- "$test_root"' EXIT
 
 app="$test_root/Conn.app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+mkdir -p \
+  "$app/Contents/MacOS" \
+  "$app/Contents/Resources/Conn_ConnPiAdapter.bundle"
 print '#!/bin/sh' > "$app/Contents/MacOS/Conn"
 print 'exit 0' >> "$app/Contents/MacOS/Conn"
 chmod 0700 "$app/Contents/MacOS/Conn"
 print 'license fixture' > "$app/Contents/Resources/LICENSE"
 print 'notice fixture' > "$app/Contents/Resources/NOTICE"
 print 'acknowledgements fixture' > "$app/Contents/Resources/ACKNOWLEDGEMENTS.md"
+print 'export default function connPiExtension() {}' \
+  > "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/index.ts"
 
 "$script_dir/inspect-release.sh" --app "$app" >/dev/null
+
+mv \
+  "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/index.ts" \
+  "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/index.ts.missing"
+if "$script_dir/inspect-release.sh" --app "$app" >/dev/null 2>&1; then
+  print -u2 "inspect-release accepted an app without its bundled Pi extension"
+  exit 1
+fi
+mv \
+  "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/index.ts.missing" \
+  "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/index.ts"
 
 mv "$app/Contents/Resources/NOTICE" "$app/Contents/Resources/NOTICE.missing"
 if "$script_dir/inspect-release.sh" --app "$app" >/dev/null 2>&1; then

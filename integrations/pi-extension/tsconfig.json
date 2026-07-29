@@ -5,16 +5,21 @@
     "moduleResolution": "NodeNext",
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
       "@earendil-works/pi-coding-agent": [
         "node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"
+      ],
+      "typebox": [
+        "node_modules/typebox/build/index.d.mts"
       ]
     }
   },
   "include": [
-    "../../Sources/ConnPiAdapter/Resources/PiExtension/index.ts"
+    "../../Sources/ConnPiAdapter/Resources/PiExtension/index.ts",
+    "test/*.test.ts"
   ]
 }
