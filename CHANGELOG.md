@@ -6,26 +6,12 @@ public alpha releases.
 
 ## [Unreleased]
 
-### Changed
-
-- Refreshed the landing page, repository banner, and public documentation to
-  match the current provider-neutral v0.2 Session UI.
-- The public product mock now demonstrates visible-set status counts, harness
-  attribution, grouped Run summaries, elapsed work time, the compact
-  model-and-reasoning picker, and draft-first New Session flow.
-- The native Conn mark now carries the same slow orbit as the landing page and
-  becomes static when Reduce Motion is enabled.
-- The landing-page mock now uses OpenAI's supplied monochrome mark and synthetic
-  Aurora and Beacon fixtures instead of private project references.
-- Documented that the ad-hoc alpha cannot register Launch Conn at login; that
-  capability requires the planned Developer ID-signed distribution.
-
 ### Planned
 
 - Broader Codex App Server version compatibility.
 - Continued accessibility, interaction, and release-hardening work.
 
-## [0.2.0] - 2026-07-25
+## [0.2.0] - 2026-07-29
 
 Continued alpha release.
 
@@ -73,6 +59,17 @@ Continued alpha release.
   start and completion timestamps.
 - The follow-up composer combines Model and Reasoning into one compact control;
   a small popover retains independent, model-filtered selectors.
+- Refreshed the landing page, repository banner, and public documentation to
+  match the current provider-neutral v0.2 Session UI.
+- The public product mock now demonstrates visible-set status counts, harness
+  attribution, grouped Run summaries, elapsed work time, the compact
+  model-and-reasoning picker, and draft-first New Session flow.
+- The native Conn mark now carries the same slow orbit as the landing page and
+  becomes static when Reduce Motion is enabled.
+- The landing-page mock now uses OpenAI's supplied monochrome mark and synthetic
+  Aurora and Beacon fixtures instead of private project references.
+- Documented that the ad-hoc alpha cannot register Launch Conn at login; that
+  capability requires the planned Developer ID-signed distribution.
 
 ### Fixed
 
