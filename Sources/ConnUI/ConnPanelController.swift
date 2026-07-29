@@ -61,9 +61,11 @@ public final class ConnPanelController<IntegrationSettingsContent: View> {
     private let panel: ConnPanel
     private var selectedScreen: NSScreen?
     private var canRecoverFromHiddenState = false
-    private var localEscapeMonitor: Any?
-    private var globalOutsideClickMonitor: Any?
-    private var screenObserver: NSObjectProtocol?
+    // AppKit owns these opaque tokens. Conn mutates them only on the main
+    // actor, then synchronously consumes them from deinit to unregister.
+    nonisolated(unsafe) private var localEscapeMonitor: Any?
+    nonisolated(unsafe) private var globalOutsideClickMonitor: Any?
+    nonisolated(unsafe) private var screenObserver: NSObjectProtocol?
     private var lifecycleState: ShellApplicationLifecycleState = .active
 
     public init(
@@ -101,7 +103,7 @@ public final class ConnPanelController<IntegrationSettingsContent: View> {
         panel.orderFrontRegardless()
     }
 
-    isolated deinit {
+    deinit {
         if let localEscapeMonitor { NSEvent.removeMonitor(localEscapeMonitor) }
         if let globalOutsideClickMonitor {
             NSEvent.removeMonitor(globalOutsideClickMonitor)
