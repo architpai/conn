@@ -35,6 +35,7 @@ type PendingAttention = {
 
 const brokerSocket = process.env.CONN_PI_BROKER_SOCKET;
 const instanceId = randomUUID();
+const reconnectLimit = Number(process.env.CONN_PI_RECONNECT_LIMIT ?? "6");
 
 export default function connParityExtension(pi: ExtensionAPI) {
 	let context: ExtensionContext | undefined;
@@ -44,6 +45,7 @@ export default function connParityExtension(pi: ExtensionAPI) {
 	let buffer = "";
 	let lastEvent = "extension_loaded";
 	let activeToolCount = 0;
+	let reconnectAttempt = 0;
 	const attention = new Map<string, PendingAttention>();
 
 	const state = () => ({
@@ -88,10 +90,27 @@ export default function connParityExtension(pi: ExtensionAPI) {
 
 	const scheduleReconnect = () => {
 		if (shuttingDown || reconnectTimer || !brokerSocket) return;
+		if (reconnectAttempt >= reconnectLimit) {
+			lastEvent = "broker_reconnect_exhausted";
+			return;
+		}
+		const delay = Math.min(200 * 2 ** reconnectAttempt, 2000);
+		reconnectAttempt += 1;
 		reconnectTimer = setTimeout(() => {
 			reconnectTimer = undefined;
 			connectBroker();
-		}, 200);
+		}, delay);
+	};
+
+	const settleDisconnectedAttention = () => {
+		for (const pending of attention.values()) {
+			pending.resolve(
+				pending.kind === "approval"
+					? "deny"
+					: "Conn disconnected before answering",
+			);
+		}
+		attention.clear();
 	};
 
 	const connectBroker = () => {
@@ -100,6 +119,7 @@ export default function connParityExtension(pi: ExtensionAPI) {
 		socket = candidate;
 		candidate.setEncoding("utf8");
 		candidate.on("connect", () => {
+			reconnectAttempt = 0;
 			send({
 				role: "bridge",
 				type: "register",
@@ -123,6 +143,7 @@ export default function connParityExtension(pi: ExtensionAPI) {
 		const disconnected = () => {
 			if (socket === candidate) socket = undefined;
 			candidate.destroy();
+			settleDisconnectedAttention();
 			scheduleReconnect();
 		};
 		candidate.on("error", disconnected);
@@ -214,11 +235,7 @@ export default function connParityExtension(pi: ExtensionAPI) {
 					return;
 				case "follow_up":
 					if (!command.message) throw new Error("message is required");
-					if (context?.isIdle() ?? true) {
-						pi.sendUserMessage(command.message);
-					} else {
-						pi.sendUserMessage(command.message, { deliverAs: "followUp" });
-					}
+					pi.sendUserMessage(command.message, { deliverAs: "followUp" });
 					respond(command, true);
 					return;
 				case "steer":
@@ -294,6 +311,8 @@ export default function connParityExtension(pi: ExtensionAPI) {
 
 	pi.on("session_start", (event, ctx) => {
 		context = ctx;
+		shuttingDown = false;
+		reconnectAttempt = 0;
 		lastEvent = `session_start:${event.reason}`;
 		connectBroker();
 	});
@@ -341,12 +360,7 @@ export default function connParityExtension(pi: ExtensionAPI) {
 			event: lastEvent,
 			state: state(),
 		});
-		for (const pending of attention.values()) {
-			pending.resolve(
-				pending.kind === "approval" ? "deny" : "Conn disconnected before answering",
-			);
-		}
-		attention.clear();
+		settleDisconnectedAttention();
 		socket?.end();
 		socket = undefined;
 	});

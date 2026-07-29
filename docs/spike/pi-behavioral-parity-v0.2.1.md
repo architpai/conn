@@ -50,21 +50,55 @@ credentials. The user's real Pi configuration and sessions were not modified.
 | --- | --- | --- |
 | Discover live Sessions | Confirmed | The extension registered the original Pi PID, stable Pi session ID, session file, cwd, model, thinking, idle/busy state, active tools, and pending attention. |
 | Stream activity and output | Confirmed | The extension observed session, agent, turn, message, and tool lifecycle events in the original process. Production must allowlist the projected fields. |
-| Idle follow-up | Confirmed | The original TUI accepted a controller message and replied with the exact requested token. |
+| Idle follow-up | Confirmed | The original TUI accepted an explicit `deliverAs: "followUp"` controller message while idle and replied with the exact requested token. |
 | Steer active work | Confirmed | A supported `steer` delivery changed the active original-TUI turn. |
-| Queue follow-up while busy | Confirmed | Pi exposes a distinct `followUp` delivery mode; it must remain distinct from steer in Conn. |
+| Queue follow-up while busy | Confirmed | The same explicit `deliverAs: "followUp"` path was sent while `isIdle` was false and a tool was active. It queued, ran after the primary turn, and returned the exact requested token. Conn therefore does not need a projected-idle branch for follow-up. |
 | Interrupt active work | Confirmed | `ctx.abort()` stopped the active original-TUI tool and turn. |
 | Select model | Confirmed | The controller changed the original TUI from `gpt-5.4-mini` to `gpt-5.4`; state and the TUI footer agreed. |
 | Select thinking level | Confirmed | The controller changed thinking from `low` to `medium`; state and the TUI footer agreed. |
 | Answer a structured question | Confirmed | A Conn-defined Pi tool published a correlated question, blocked, received `PARITY_OK`, and the original turn completed with `QUESTION_ANSWER_PARITY_OK`. |
 | Deny a permission request | Confirmed | A marked bash tool was intercepted, denial returned to the original turn, and the denied marker file was absent. |
 | Approve a permission request | Confirmed | The same interception path received approval, executed the marked command, and produced the expected marker. |
-| Survive Conn broker restart | Confirmed | The broker stopped and its socket disappeared while the original Pi PID remained alive. The extension reconnected to a restarted broker and accepted a new follow-up. |
+| Survive Conn broker restart | Confirmed | The broker stopped and its socket disappeared while the original Pi PID remained alive. Retry was bounded and gave up; merely restarting the broker did not create an unbounded loop. Pi's supported `/reload` lifecycle created a fresh extension instance, reconnected, and preserved the Session. Production also wakes a bounded retry cycle from Conn's runtime-descriptor change. |
 | Pi `/reload` | Confirmed | The extension shut down, a fresh extension instance registered against the same Pi PID and session ID, and state reported `session_start:reload`. |
 | Pi `/new` | Confirmed | The same Pi PID switched to a new stable session ID, re-registered, and accepted a new Conn follow-up that returned `NEW_SESSION_BRIDGE_OK`. |
 | Pi `/fork` | Confirmed | Selecting a branch created another stable session ID and state reported `session_start:fork`. |
 | Exit and resume | Confirmed | Exit removed the live registration. A newly launched TUI resumed the exact saved session ID and its globally installed bridge registered at startup. |
-| Ad-hoc chat creation | Confirmed by RPC spike | Conn-managed Pi RPC Sessions support create, prompt, streaming, model/thinking selection, recovery, and the same action semantics. |
+| Ad-hoc chat creation | Deferred | The RPC spike proved that a future Conn-managed Pi mode can support it. v0.2.1 integrates only independently launched external Pi TUIs, so it does not create or own ad-hoc Pi Sessions. |
+
+## Focused edge-case qualification
+
+The Phase 0 rerun removed three remaining ambiguities before production work:
+
+1. **Follow-up has one delivery rule.** Conn always sends
+   `pi.sendUserMessage(message, { deliverAs: "followUp" })`. The exact same
+   path succeeded while idle and while a primary turn was inside an
+   eight-second tool call. A busy-state observation is informative only; it
+   is not an authority check or dispatch branch.
+2. **Approval authority loss fails closed.** A tool call was held for Conn
+   approval, then the broker was terminated. The extension resolved the
+   pending call as denied, the marker command never executed, and the Pi turn
+   continued with an error result instead of hanging.
+3. **Reconnect is bounded.** With a retry budget of three, the extension
+   exhausted its backoff and stopped. Starting the broker afterward produced
+   no registration. The ordinary Pi `/reload` lifecycle started a new bounded
+   attempt and re-registered the same PID and Session immediately.
+
+Pi 0.82.1 exposes `registerTool` and `setActiveTools`, but no supported
+per-extension `unregisterTool`. Disabling Conn's optional question tool in an
+already-running TUI is therefore truthfully **reload-gated**. Before reload,
+the registered tool must remain inert and return a bounded unavailable result;
+Conn must not change Pi's unrelated active-tool set.
+
+The installed model registry contains an unbounded, unqualified global
+catalog. Until a bounded authenticated/configured-model rule is proven, the
+external integration advertises only the current model and treats model
+selection as a degraded capability.
+
+No supported Pi API identifies and activates the exact terminal window that
+owns an independently launched TUI. Pi `open` is therefore unavailable in
+v0.2.1; Conn must suppress the control before click rather than attempt a
+heuristic terminal activation.
 
 ## Settings and lifecycle contract
 
