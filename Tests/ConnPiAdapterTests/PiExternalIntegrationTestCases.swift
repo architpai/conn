@@ -15,8 +15,7 @@ enum PiExternalIntegrationTestCases {
         let socketURL = root.appendingPathComponent("broker.sock")
         let broker = PiLocalBroker(
             runtimeStore: store,
-            socketURL: socketURL,
-            features: .init(questionsEnabled: true, approvalsEnabled: true)
+            socketURL: socketURL
         )
         let integration = PiExternalIntegration(broker: broker, enabled: true)
         do {
@@ -24,8 +23,8 @@ enum PiExternalIntegrationTestCases {
             suite.check(feed.snapshot.sessions.isEmpty, "external feed begins with honest empty inventory")
             suite.check(
                 feed.snapshot.capabilities.actions
-                    == [.followUp, .steer, .interrupt, .answer, .resolveApproval],
-                "optional attention capabilities appear only in their enabled generation"
+                    == [.followUp, .steer, .interrupt],
+                "Pi advertises only its standard external Session controls"
             )
             let runtime = try require(
                 store.load(),
@@ -109,54 +108,6 @@ enum PiExternalIntegrationTestCases {
                 "successive Pi state updates retain bounded Session activity history"
             )
 
-            try PiLocalBrokerTestCases.writeLine(
-                """
-                {"type":"attention","request":{"id":"attention-1","kind":"question","questionId":"question-1","header":"Choice","prompt":"Choose one","choices":["A","B"],"permitsOther":false},"state":\(stateJSON(isIdle: false, lastEvent: "tool_call"))}
-                """,
-                to: client.descriptor
-            )
-            guard let attentionUpdate = await iterator.next(),
-                  case let .attentionUpsert(request) = attentionUpdate.update else {
-                suite.fail("question frame must become one neutral Attention Request")
-                Darwin.close(client.descriptor)
-                await integration.disconnect()
-                return
-            }
-            suite.check(
-                request.kind == .structuredQuestion,
-                "question Attention kind remains provider-neutral"
-            )
-            let answers = try ConnStructuredAnswers(
-                valuesByQuestionID: ["question-1": ["A"]]
-            )
-            let answerAction = ConnAction.answer(
-                sessionID: session.id,
-                authority: .init(
-                    requestID: request.id,
-                    generation: feed.snapshot.generation
-                ),
-                answers: answers
-            )
-            let answerTask = Task { await integration.perform(answerAction) }
-            let answerCommand = try PiLocalBrokerTestCases.readLine(
-                from: client.descriptor
-            )
-            suite.check(
-                answerCommand.contains(#""type":"answer""#)
-                    && answerCommand.contains(#""requestId":"attention-1""#),
-                "answer targets one exact live question request"
-            )
-            try PiLocalBrokerTestCases.writeLine(
-                """
-                {"type":"response","id":\(jsonString(commandID(answerCommand))),"success":true,"state":\(stateJSON(isIdle: false, lastEvent: "tool_call"))}
-                """,
-                to: client.descriptor
-            )
-            let answerOutcome = await answerTask.value
-            suite.check(
-                answerOutcome.kind == .accepted,
-                "exact question answer acknowledgement is accepted"
-            )
             Darwin.close(client.descriptor)
             await integration.disconnect()
         } catch {

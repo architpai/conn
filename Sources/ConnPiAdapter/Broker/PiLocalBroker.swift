@@ -22,12 +22,6 @@ public enum PiLocalBrokerEvent: Equatable, Sendable {
         event: String,
         activity: PiBridgeActivity?
     )
-    case attentionOpened(
-        sessionID: String,
-        state: PiBridgeState,
-        request: PiBridgeAttentionRequest
-    )
-    case attentionClosed(sessionID: String, requestID: String)
     case disconnected(sessionID: String, instanceID: String)
 }
 
@@ -51,7 +45,6 @@ public struct PiEffectiveModelState: Equatable, Sendable {
 public actor PiLocalBroker {
     private let runtimeStore: PiRuntimeDescriptorStore
     private let socketURL: URL
-    private var features: PiBrokerOptionalFeatures
     private var server: PiUnixSocketServer?
     private var descriptor: PiBrokerRuntimeDescriptor?
     private var leaseTask: Task<Void, Never>?
@@ -59,18 +52,15 @@ public actor PiLocalBroker {
     private var registrationsByClient: [UUID: PiLiveRegistration] = [:]
     private var latestStateByClient: [UUID: PiBridgeState] = [:]
     private var pendingCommands: [String: PendingPiCommand] = [:]
-    private var attentionByID: [String: PiBridgeAttentionRequest] = [:]
     private var observers:
         [UUID: AsyncStream<PiLocalBrokerEvent>.Continuation] = [:]
 
     public init(
         runtimeStore: PiRuntimeDescriptorStore,
-        socketURL: URL,
-        features: PiBrokerOptionalFeatures
+        socketURL: URL
     ) {
         self.runtimeStore = runtimeStore
         self.socketURL = socketURL.standardizedFileURL
-        self.features = features
     }
 
     public func start(
@@ -102,7 +92,6 @@ public actor PiLocalBroker {
         do {
             let descriptor = try runtimeStore.publish(
                 socketURL: socketURL,
-                features: features,
                 now: now,
                 timeToLive: timeToLive
             )
@@ -133,7 +122,6 @@ public actor PiLocalBroker {
             $0.continuation.resume(returning: .acknowledgementUncertain)
         }
         pendingCommands.removeAll()
-        attentionByID.removeAll()
         observers.values.forEach { $0.finish() }
         observers.removeAll()
         let activeClients = clients.values
@@ -148,16 +136,6 @@ public actor PiLocalBroker {
         registrationsByClient.values.sorted {
             $0.handshake.sessionID < $1.handshake.sessionID
         }
-    }
-
-    public func optionalFeatures() -> PiBrokerOptionalFeatures {
-        features
-    }
-
-    public func attentionRequest(
-        id: String
-    ) -> PiBridgeAttentionRequest? {
-        attentionByID[id]
     }
 
     public func effectiveModelState(
@@ -182,13 +160,6 @@ public actor PiLocalBroker {
             modelID: handshake.modelID,
             thinkingLevel: handshake.thinkingLevel
         )
-    }
-
-    public func updateFeatures(_ value: PiBrokerOptionalFeatures) {
-        if descriptor != nil {
-            stop()
-        }
-        features = value
     }
 
     public func feed() -> PiLocalBrokerFeed {
@@ -278,31 +249,6 @@ public actor PiLocalBroker {
                                 state: response.state
                             )
                     )
-                case let .attention(attention):
-                    guard (
-                        attention.request.kind == "question"
-                            && features.questionsEnabled
-                    ) || (
-                        attention.request.kind == "approval"
-                            && features.approvalsEnabled
-                    ) else {
-                        client.close()
-                        return
-                    }
-                    latestStateByClient[clientID] = attention.state
-                    attentionByID[attention.request.id] = attention.request
-                    publish(.attentionOpened(
-                        sessionID: attention.state.sessionID,
-                        state: attention.state,
-                        request: attention.request
-                    ))
-                case let .attentionResolved(resolved):
-                    latestStateByClient[clientID] = resolved.state
-                    attentionByID.removeValue(forKey: resolved.requestID)
-                    publish(.attentionClosed(
-                        sessionID: resolved.state.sessionID,
-                        requestID: resolved.requestID
-                    ))
                 }
             } catch {
                 client.close()
@@ -350,9 +296,6 @@ public actor PiLocalBroker {
         commandIDs.forEach {
             resolveCommand($0, with: .acknowledgementUncertain)
         }
-        // Any bridge loss invalidates the current Integration generation, so
-        // no attention token survives to a later registration.
-        attentionByID.removeAll()
         if let registration = registrationsByClient.removeValue(forKey: clientID) {
             publish(.disconnected(
                 sessionID: registration.handshake.sessionID,

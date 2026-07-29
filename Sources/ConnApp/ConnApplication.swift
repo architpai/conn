@@ -102,14 +102,6 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
             let pi = PiExternalIntegration.userDefault(
                 enabled: UserDefaults.standard.bool(
                     forKey: PiIntegrationSettingsModel.enabledKey
-                ),
-                features: .init(
-                    questionsEnabled: UserDefaults.standard.bool(
-                        forKey: PiIntegrationSettingsModel.questionsKey
-                    ),
-                    approvalsEnabled: UserDefaults.standard.bool(
-                        forKey: PiIntegrationSettingsModel.approvalsKey
-                    )
                 )
             )
             let coordinator = try ConnIntegrationCoordinator(

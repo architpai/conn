@@ -26,7 +26,7 @@ enum PiProductionLiveProbe {
             trashDirectory: agentDirectory.appendingPathComponent("trash", isDirectory: true)
         )
         do {
-            _ = try installer.install(configuration: .init())
+            _ = try installer.install()
         } catch {
             fail("isolated production extension install failed: \(error)")
         }
@@ -34,8 +34,7 @@ enum PiProductionLiveProbe {
             runtimeStore: .init(
                 directory: URL(fileURLWithPath: runtimeArgument, isDirectory: true)
             ),
-            socketURL: URL(fileURLWithPath: socketArgument),
-            features: .init(questionsEnabled: false, approvalsEnabled: false)
+            socketURL: URL(fileURLWithPath: socketArgument)
         )
         let integration = PiExternalIntegration(broker: broker, enabled: true)
         do {

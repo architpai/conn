@@ -6,8 +6,6 @@ import ConnPiAdapter
 @MainActor
 final class PiIntegrationSettingsModel: ObservableObject {
     static let enabledKey = "pi.external.enabled.v1"
-    static let questionsKey = "pi.external.questions.v1"
-    static let approvalsKey = "pi.external.approvals.v1"
 
     @Published private(set) var installStatus: PiExtensionInstallStatus
     @Published private(set) var isWorking = false
@@ -15,8 +13,6 @@ final class PiIntegrationSettingsModel: ObservableObject {
     @Published private(set) var notice: String?
     @Published private(set) var toolchainStatus = "Not yet qualified"
     @Published var showsEnableConsent = false
-    @Published private(set) var questionsEnabled: Bool
-    @Published private(set) var approvalsEnabled: Bool
 
     private let integration: PiExternalIntegration
     private let coordinator: ConnIntegrationCoordinator
@@ -35,8 +31,6 @@ final class PiIntegrationSettingsModel: ObservableObject {
         self.installer = installer
         self.discovery = discovery
         self.installStatus = installer.status()
-        self.questionsEnabled = UserDefaults.standard.bool(forKey: Self.questionsKey)
-        self.approvalsEnabled = UserDefaults.standard.bool(forKey: Self.approvalsKey)
     }
 
     var enabled: Bool {
@@ -76,9 +70,7 @@ final class PiIntegrationSettingsModel: ObservableObject {
             model.toolchainStatus =
                 "Pi \(toolchain.piVersion) · Node \(toolchain.nodeVersion)"
             do {
-                _ = try model.installer.install(
-                    configuration: model.behaviorConfiguration
-                )
+                _ = try model.installer.install()
                 UserDefaults.standard.set(true, forKey: Self.enabledKey)
                 await model.integration.setEnabled(true)
                 await model.coordinator.refresh(
@@ -139,17 +131,7 @@ final class PiIntegrationSettingsModel: ObservableObject {
     func updateExtension() {
         run { model in
             do {
-                _ = try model.installer.install(
-                    configuration: model.behaviorConfiguration
-                )
-                if model.enabled {
-                    await model.integration.setOptionalFeatures(
-                        model.brokerFeatures
-                    )
-                    await model.coordinator.refresh(
-                        PiExternalIntegrationIdentity.integrationID
-                    )
-                }
+                _ = try model.installer.install()
                 model.installStatus = model.installer.status()
                 model.notice =
                     "Conn's Pi extension is current. Existing Pi TUIs need /reload."
@@ -158,28 +140,6 @@ final class PiIntegrationSettingsModel: ObservableObject {
                 model.installStatus = model.installer.status()
             }
         }
-    }
-
-    func setQuestionsEnabled(_ value: Bool) {
-        let priorValue = questionsEnabled
-        questionsEnabled = value
-        applyOptionalFeatures(
-            changedFeature: .questions(priorValue: priorValue),
-            notice: value
-                ? "Conn questions are enabled. Existing Pi TUIs need /reload to add the tool."
-                : "Conn questions are inert now. Existing Pi TUIs need /reload to remove the registered tool."
-        )
-    }
-
-    func setApprovalsEnabled(_ value: Bool) {
-        let priorValue = approvalsEnabled
-        approvalsEnabled = value
-        applyOptionalFeatures(
-            changedFeature: .approvals(priorValue: priorValue),
-            notice: value
-                ? "Conn approval mediation is enabled for one-time approve or deny decisions."
-                : "Conn approval mediation is disabled; Pi's original tool behavior is restored."
-        )
     }
 
     func refresh() {
@@ -201,56 +161,6 @@ final class PiIntegrationSettingsModel: ObservableObject {
             notice = nil
             defer { isWorking = false }
             await operation(self)
-        }
-    }
-
-    private var behaviorConfiguration: PiExtensionBehaviorConfiguration {
-        .init(
-            questionsEnabled: questionsEnabled,
-            approvalsEnabled: approvalsEnabled
-        )
-    }
-
-    private var brokerFeatures: PiBrokerOptionalFeatures {
-        .init(
-            questionsEnabled: questionsEnabled,
-            approvalsEnabled: approvalsEnabled
-        )
-    }
-
-    private func applyOptionalFeatures(
-        changedFeature: ChangedOptionalFeature,
-        notice: String
-    ) {
-        guard enabled else { return }
-        run { model in
-            do {
-                _ = try model.installer.install(
-                    configuration: model.behaviorConfiguration
-                )
-                await model.integration.setOptionalFeatures(model.brokerFeatures)
-                await model.coordinator.refresh(
-                    PiExternalIntegrationIdentity.integrationID
-                )
-                UserDefaults.standard.set(
-                    model.questionsEnabled,
-                    forKey: Self.questionsKey
-                )
-                UserDefaults.standard.set(
-                    model.approvalsEnabled,
-                    forKey: Self.approvalsKey
-                )
-                model.installStatus = model.installer.status()
-                model.notice = notice
-            } catch {
-                switch changedFeature {
-                case let .questions(priorValue):
-                    model.questionsEnabled = priorValue
-                case let .approvals(priorValue):
-                    model.approvalsEnabled = priorValue
-                }
-                model.issue = model.userFacing(error)
-            }
         }
     }
 
@@ -298,11 +208,6 @@ final class PiIntegrationSettingsModel: ObservableObject {
     }
 }
 
-private enum ChangedOptionalFeature {
-    case questions(priorValue: Bool)
-    case approvals(priorValue: Bool)
-}
-
 struct PiIntegrationSettingsView: View {
     @ObservedObject var model: PiIntegrationSettingsModel
 
@@ -333,26 +238,6 @@ struct PiIntegrationSettingsView: View {
                 Button("Diagnose") { model.diagnose() }
             }
             .disabled(model.isWorking || model.installStatus == .foreign)
-            Group {
-                Toggle(
-                    "Enable Conn structured questions",
-                    isOn: Binding(
-                        get: { model.questionsEnabled },
-                        set: { model.setQuestionsEnabled($0) }
-                    )
-                )
-                Toggle(
-                    "Enable Conn approval mediation",
-                    isOn: Binding(
-                        get: { model.approvalsEnabled },
-                        set: { model.setApprovalsEnabled($0) }
-                    )
-                )
-                .help(
-                    "Conn policy intercepts write, edit, bash, and unknown tools for one-time approve or deny. It is not a sandbox."
-                )
-            }
-            .disabled(!model.enabled || model.isWorking)
             if let notice = model.notice {
                 Text(notice).font(.system(size: 9)).foregroundStyle(.secondary)
             }
@@ -368,7 +253,7 @@ struct PiIntegrationSettingsView: View {
             Button("Install and Enable") { model.confirmEnable() }
         } message: {
             Text(
-                "Conn will install a global TypeScript extension at ~/.pi/agent/extensions/conn. Extensions run with your permissions. Conn will not launch, restart, or stop Pi. Questions and approval mediation remain off. Existing Pi TUIs need one /reload."
+                "Conn will install a global TypeScript extension at ~/.pi/agent/extensions/conn. Extensions run with your permissions. Conn will observe and control standard Pi Session behavior but will not launch, restart, or stop Pi. Existing Pi TUIs need one /reload."
             )
         }
     }

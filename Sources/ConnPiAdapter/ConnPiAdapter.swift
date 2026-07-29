@@ -24,11 +24,7 @@ public actor PiExternalIntegration: ConnIntegration {
     }
 
     public static func userDefault(
-        enabled: Bool = false,
-        features: PiBrokerOptionalFeatures = .init(
-            questionsEnabled: false,
-            approvalsEnabled: false
-        )
+        enabled: Bool = false
     ) -> PiExternalIntegration {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let runtimeStore = PiRuntimeDescriptorStore(
@@ -43,8 +39,7 @@ public actor PiExternalIntegration: ConnIntegration {
         return PiExternalIntegration(
             broker: PiLocalBroker(
                 runtimeStore: runtimeStore,
-                socketURL: socketURL,
-                features: features
+                socketURL: socketURL
             ),
             enabled: enabled
         )
@@ -58,7 +53,6 @@ public actor PiExternalIntegration: ConnIntegration {
             throw .unavailable
         }
         let brokerFeed = await broker.feed()
-        let optionalFeatures = await broker.optionalFeatures()
         generationOrdinal &+= 1
         let generation = IntegrationConnectionGeneration(
             instanceID: UUID(),
@@ -66,9 +60,7 @@ public actor PiExternalIntegration: ConnIntegration {
         )
         let sequence: UInt64 = 0
         let observedAt = Date()
-        var actions: Set<ConnActionKind> = [.followUp, .steer, .interrupt]
-        if optionalFeatures.questionsEnabled { actions.insert(.answer) }
-        if optionalFeatures.approvalsEnabled { actions.insert(.resolveApproval) }
+        let actions: Set<ConnActionKind> = [.followUp, .steer, .interrupt]
         let initialSessions = brokerFeed.registrations.map {
             Self.session(from: $0, observedAt: observedAt)
         }
@@ -130,29 +122,6 @@ public actor PiExternalIntegration: ConnIntegration {
                             observedAt: now,
                             update: .sessionUpsert(mapped)
                         ))
-                    case let .attentionOpened(sessionID, _, request):
-                        continuation.yield(.init(
-                            integrationID: PiExternalIntegrationIdentity.integrationID,
-                            cursor: .init(generation: generation, sequence: nextSequence),
-                            observedAt: now,
-                            update: .attentionUpsert(
-                                Self.attention(
-                                    sessionID: sessionID,
-                                    request: request,
-                                    observedAt: now
-                                )
-                            )
-                        ))
-                    case let .attentionClosed(sessionID, requestID):
-                        continuation.yield(.init(
-                            integrationID: PiExternalIntegrationIdentity.integrationID,
-                            cursor: .init(generation: generation, sequence: nextSequence),
-                            observedAt: now,
-                            update: .attentionRemoved(
-                                sessionID: Self.sessionID(sessionID),
-                                requestID: .init(rawValue: requestID)
-                            )
-                        ))
                     case .disconnected:
                         continuation.yield(.init(
                             integrationID: PiExternalIntegrationIdentity.integrationID,
@@ -200,37 +169,11 @@ public actor PiExternalIntegration: ConnIntegration {
         case let .interrupt(sessionID, _):
             upstreamID = sessionID.upstreamID.rawValue
             command = .interrupt(id: UUID().uuidString)
-        case let .answer(sessionID, authority, answers):
-            guard let request = await broker.attentionRequest(
-                id: authority.requestID.rawValue
-            ), request.kind == "question",
-              let questionID = request.questionID,
-              answers.valuesByQuestionID.count == 1,
-              let answer = answers.valuesByQuestionID[questionID]?.first else {
-                return outcome(action, .rejected, "A bounded answer is required")
-            }
-            upstreamID = sessionID.upstreamID.rawValue
-            command = .answer(
-                id: UUID().uuidString,
-                requestID: authority.requestID.rawValue,
-                answer: answer
-            )
-        case let .resolveApproval(sessionID, authority, decision):
-            guard await broker.attentionRequest(
-                id: authority.requestID.rawValue
-            )?.kind == "approval",
-              decision == .approve || decision == .deny else {
-                return outcome(
-                    action,
-                    .rejected,
-                    "External Pi supports one-time approve or deny only"
-                )
-            }
-            upstreamID = sessionID.upstreamID.rawValue
-            command = .decide(
-                id: UUID().uuidString,
-                requestID: authority.requestID.rawValue,
-                approve: decision == .approve
+        case .answer, .resolveApproval:
+            return outcome(
+                action,
+                .unavailable,
+                "Pi has no standard question or approval control"
             )
         }
         switch await broker.send(command, to: upstreamID) {
@@ -299,12 +242,6 @@ public actor PiExternalIntegration: ConnIntegration {
         }
     }
 
-    public func setOptionalFeatures(
-        _ features: PiBrokerOptionalFeatures
-    ) async {
-        await broker.updateFeatures(features)
-    }
-
     public func isEnabled() -> Bool {
         enabled
     }
@@ -337,45 +274,6 @@ public actor PiExternalIntegration: ConnIntegration {
         .init(
             integrationID: PiExternalIntegrationIdentity.integrationID,
             upstreamID: .init(rawValue: upstreamID)
-        )
-    }
-
-    private static func attention(
-        sessionID upstreamID: String,
-        request: PiBridgeAttentionRequest,
-        observedAt: Date
-    ) -> AttentionRequest {
-        let sessionID = sessionID(upstreamID)
-        if request.kind == "question" {
-            let question = ConnStructuredQuestion(
-                id: request.questionID ?? request.id,
-                header: request.header ?? "Question",
-                prompt: request.prompt,
-                choices: request.choices.map {
-                    .init(label: $0, detail: "")
-                },
-                permitsOther: request.permitsOther ?? false,
-                isSecret: false
-            )
-            return .init(
-                id: .init(rawValue: request.id),
-                sessionID: sessionID,
-                kind: .structuredQuestion,
-                content: .structuredQuestions(
-                    questions: [question],
-                    autoResolutionMilliseconds: 120_000
-                ),
-                summary: request.prompt,
-                observedAt: observedAt
-            )
-        }
-        return .init(
-            id: .init(rawValue: request.id),
-            sessionID: sessionID,
-            kind: .approval,
-            content: .approval(availableDecisions: [.approve, .deny]),
-            summary: "Allow Pi tool \(request.toolName ?? "unknown")?",
-            observedAt: observedAt
         )
     }
 

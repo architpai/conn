@@ -1,6 +1,6 @@
 # Conn v0.2.1 external Pi integration implementation plan
 
-Status: Proposed revision 2 for review; implementation not started
+Status: Implemented with scope correction
 
 Date: 2026-07-29
 
@@ -23,9 +23,9 @@ settings, packaging, or release claims.
 
 This release shape follows the strongest existing evidence:
 
-- the parity spike already proved external follow-up, steer, interrupt,
-  model/thinking changes, questions, approvals, broker restart, reload, new,
-  fork, exit, and resume in the original independently launched TUI;
+- the parity spike proved external follow-up, steer, interrupt,
+  model/thinking changes, broker restart, reload, new, fork, exit, and resume
+  in the original independently launched TUI;
 - an in-process broker is sufficient because Conn quitting correctly
   disconnects supervision while the user-owned TUI continues; and
 - the persistent host is needed only for managed RPC work and carries a
@@ -34,14 +34,11 @@ This release shape follows the strongest existing evidence:
 The v0.2.1 user-visible goal is parity for the actions that are meaningful for
 a live external Pi Session:
 
-- monitor Session, Run, Activity, model, thinking, and attention state;
+- monitor Session, Run, Activity, model, and thinking state;
 - follow up while idle or busy;
 - steer an active Run;
 - interrupt an active Run;
-- select model and thinking for the next follow-up;
-- answer a Conn structured question when that optional tool is enabled; and
-- approve or deny an intercepted tool when optional approval mediation is
-  enabled.
+- expose the currently qualified model and thinking state.
 
 `createSession` is unavailable for `pi.external`. External Pi support is still
 valuable and honest without pretending that Conn can create a new independent
@@ -91,8 +88,9 @@ This revision resolves the first-plan review as follows:
 4. Managed/external identity handoff is removed from this release.
 5. `open` remains composition-owned and gains pre-click per-Integration
    availability.
-6. Approval mediation and the Conn question tool are independent, disclosed,
-   default-off features for external Pi.
+6. Pi question and approval behavior is out of scope because neither is a
+   standard Pi Session concept and Conn cannot generalize arbitrary user
+   extensions.
 7. Follow-up always sends an explicit Pi delivery mode after a focused race
    probe proves the behavior.
 8. Future duplicate-writer behavior is described as detection and degradation,
@@ -120,9 +118,7 @@ v0.2.1 does not:
 - reopen a live external Session in a competing Pi process;
 - expose raw Pi events, JSON, provider model objects, encrypted reasoning
   signatures, request tokens, or secrets outside `ConnPiAdapter`;
-- claim that Conn's optional approval mediation is Pi's native policy or a
-  sandbox;
-- inject the Conn question tool without explicit user consent;
+- inject custom tools or intercept arbitrary user-customized Pi tools;
 - expose Pi's unqualified global model registry;
 - add a public Conn plugin interface;
 - regress or reroute the existing Codex Integration; or
@@ -183,7 +179,6 @@ or disablement of Pi cannot change Codex authority or membership.
 - local broker authentication and framing;
 - extension-instance and Session lifecycle;
 - Pi event decoding and semantic projection;
-- attention correlation and timeout behavior;
 - model qualification;
 - bounded buffering and snapshot/update handoff; and
 - Pi-specific diagnostics.
@@ -270,8 +265,6 @@ The installed directory contains:
 
 - `index.ts`
 - `.conn-install.json`
-- a bounded behavior configuration file containing only the two optional
-  feature toggles
 
 The ownership manifest contains:
 
@@ -291,8 +284,6 @@ The user chooses `Enable Pi monitoring` and reviews consent copy explaining:
 - a global TypeScript extension will load into future Pi TUIs;
 - extensions execute with the user's permissions;
 - core monitoring/control does not own or stop Pi work;
-- the question tool and approval mediation are separate, default-off behavior
-  changes; and
 - existing Pi TUIs need one `/reload`, while future TUIs auto-load it.
 
 Conn then:
@@ -304,8 +295,8 @@ Conn then:
    `extensions/conn` target;
 4. creates `extensions/` with the expected owner and safe permissions if it is
    absent;
-5. prepares a sibling directory containing the bundled extension, behavior
-   configuration, and ownership manifest;
+5. prepares a sibling directory containing the bundled extension and
+   ownership manifest;
 6. verifies resource hash, version, permissions, and file type;
 7. atomically renames the prepared directory into place;
 8. starts the in-process broker;
@@ -337,9 +328,7 @@ Disabling Pi:
 - stops the broker and invalidates its lease;
 - leaves every Pi TUI running;
 - makes optional interception paths inert immediately on broker loss;
-- retains the installed files so re-enable remains reversible; and
-- tells running TUIs that `/reload` removes the extension's registered
-  resources from their next loaded extension instance.
+- retains the installed files so re-enable remains reversible.
 
 Uninstall:
 
@@ -357,7 +346,7 @@ Conn cannot run an uninstall after the user deletes `Conn.app` directly.
 The orphan contract is therefore fail-inert, not magical self-deletion:
 
 - the extension requires a fresh broker runtime descriptor and lease before it
-  enables any connection, question, or approval behavior;
+  enables any connection behavior;
 - when the descriptor is missing, expired, malformed, incompatible, or points
   to an absent broker, the extension adds no prompts, blocks no tools, starts
   no agent work, and stops connection retries;
@@ -381,8 +370,7 @@ release gate.
 - It starts no socket, process, timer, or watcher.
 - `session_start` schedules connection work and returns without waiting.
 - Conn adds zero synchronous network wait to Pi startup.
-- Monitoring, the question tool, and approval interception cannot block
-  `session_start`.
+- Monitoring cannot block `session_start`.
 
 ### Runtime descriptor and lease
 
@@ -392,8 +380,7 @@ Conn atomically publishes an owner-only runtime descriptor containing:
 - broker generation;
 - short user-temporary Unix socket path;
 - rotated authentication secret;
-- issue and expiry timestamps; and
-- enabled optional features for that broker generation.
+- issue and expiry timestamps.
 
 The socket parent is mode `0700`; the socket is owner-only; the broker verifies
 peer UID where supported. Secrets never appear in the installed extension
@@ -423,81 +410,16 @@ inputs rather than hard-coded sleeps in tests.
 Broker loss:
 
 - invalidates live Conn authority immediately;
-- stops optional approval interception rather than leaving permanent prompts;
-- makes a registered Conn question tool return a bounded unavailable result
-  without opening local UI;
 - starts only the bounded reconnect policy above; and
 - never affects Pi's own Session or agent lifecycle.
 
-The prior plan's local-confirmation fallback is removed from v0.2.1. Approval
-mediation is active only while a compatible Conn broker is connected.
+## Provider-specific customization boundary
 
-## Optional behavior changes
-
-### Defaults
-
-For `pi.external`:
-
-- monitoring and supported control are enabled by the main Pi toggle;
-- approval mediation defaults **off**; and
-- the Conn structured-question tool defaults **off**.
-
-The optional features have independent toggles, independent consent copy, and
-independent runtime capability.
-
-### Approval mediation
-
-When explicitly enabled and a compatible Conn broker is live:
-
-- built-in read, list, find, and grep operations pass without Conn approval;
-- write, edit, bash, and unknown/custom tool calls require an exact
-  approve-or-deny decision;
-- the request presents bounded tool identity, Workspace, and a safe summary,
-  never an unbounded command envelope;
-- v0.2.1 offers `approve` and `deny`, not `approveForSession`;
-- a decision applies to one exact tool-call identity;
-- decisions are never persisted, cached, or replayed; and
-- disconnect, timeout, Session replacement, malformed response, stale
-  authority, or broker restart stops Conn interception for subsequent calls.
-
-The Phase 0 spike must determine the safe behavior for a tool call already
-blocked when broker authority disappears. The accepted result must either:
-
-- return a bounded blocked/cancelled tool result immediately; or
-- allow Pi's original execution path only when Pi's extension contract proves
-  that returning no decision safely restores it.
-
-It may not remain blocked indefinitely or silently execute after a Conn
-approval became uncertain.
-
-Consent copy states that this is Conn policy, not Pi policy and not a sandbox.
-
-### Structured-question tool
-
-When explicitly enabled and a compatible broker is live, Conn registers a
-versioned `conn_question` tool through supported dynamic extension behavior.
-
-The tool:
-
-- uses a closed bounded schema matching Conn's question model;
-- rejects excessive questions, choices, answer bytes, secret fields, or
-  malformed IDs;
-- publishes one correlated Attention Request;
-- waits for exact current authority;
-- returns only the selected bounded answer to Pi;
-- reconciles cancellation, timeout, Session replacement, broker loss, and
-  resolution elsewhere; and
-- never persists drafts, answers, or request tokens in Conn checkpoints.
-
-The consent copy explicitly says the tool changes the model-visible tool set
-and may cause Pi to ask through Conn.
-
-Phase 0 must prove whether Pi can register and deactivate the tool
-connection-scoped without disturbing the user's other active tools. If Pi
-cannot remove/deactivate it safely in a running TUI, turning it off is
-documented as requiring `/reload`; broker loss still makes it inert.
-
-Conn injects no hidden system prompt.
+Conn observes and controls only standard Pi Session behavior. It does not
+register model-visible tools, intercept tool execution, translate arbitrary
+extension events, or attempt to emulate Codex questions and approvals.
+User-installed Pi extensions remain owned by their users and outside Conn's
+capability contract.
 
 ## Local broker protocol
 
@@ -530,13 +452,12 @@ Handshake establishes:
 - Session replacement reason;
 - Workspace;
 - model and thinking;
-- supported optional features; and
 - broker generation.
 
 Every frame has a maximum byte count. Every Session has bounded pending
-commands, attention requests, Activities, and buffered update bytes.
+commands, Activities, and buffered update bytes.
 
-Lifecycle, attention, action reconciliation, and authority-loss events are
+Lifecycle, action reconciliation, and authority-loss events are
 non-droppable. High-frequency message/tool deltas may be coalesced by stable
 semantic identity. Unsafe overflow invalidates the Pi Integration generation
 and requires requalification.
@@ -554,8 +475,6 @@ and requires requalification.
 - Run: created only while Pi event evidence establishes an agent interval.
 - Activity: adapter-generated bounded identity derived from supported event
   identity and sequence.
-- Attention Request: adapter identity mapped to one request token held only
-  for the current broker/extension generation.
 
 PID reuse, extension reload, Session replacement, and stale frames cannot
 retarget Session authority.
@@ -586,8 +505,8 @@ incomplete recovery never authorizes Session removal.
 | Follow-up | Always explicit `pi.sendUserMessage(..., { deliverAs: "followUp" })` after Phase 0 proof |
 | Steer | Explicit `deliverAs: "steer"` |
 | Interrupt | `ctx.abort()` |
-| Answer | Resolve exact enabled Conn question-tool request |
-| Resolve approval | Resolve exact enabled interception request |
+| Answer | Unsupported |
+| Resolve approval | Unsupported |
 | Model/reasoning | `setModel`, `setThinkingLevel`, then read back before follow-up |
 
 Conn does not choose idle versus busy delivery from lagging projected state.
@@ -693,8 +612,6 @@ The Codex-only settings content becomes a composed Conn Settings view in
    - Enable Pi monitoring
    - Extension state/version
    - External Integration freshness
-   - Enable Conn structured questions, default off
-   - Enable Conn approval mediation, default off
    - Reload guidance
    - Diagnose
    - Update
@@ -717,7 +634,6 @@ Required Pi states:
 - connected
 - update available
 - mixed extension versions
-- optional feature reload required
 - foreign target conflict
 - disconnected
 - extension inert due to stale or absent broker
@@ -746,15 +662,12 @@ Never persist:
 - full Session-file paths when Workspace identity suffices;
 - hidden reasoning or encrypted signatures;
 - provider envelopes, headers, or model registry payloads;
-- pending question/approval tokens;
-- question drafts or answers;
-- approval decisions;
 - PID, broker generation, extension instance, connection generation, live
   capability, or action availability; or
 - acknowledgement-uncertain actions.
 
 Restored Pi Sessions begin rehydrated/stale and non-actionable. Fresh extension
-and broker evidence is required to restore live state, attention, or controls.
+and broker evidence is required to restore live state or controls.
 
 Logs and diagnostics use a strict allowlist with length bounds. Privacy tests
 include unique canaries for every prohibited field.
@@ -765,7 +678,7 @@ The extension, broker, and adapter each define and test:
 
 - maximum external connections;
 - maximum frame and buffer bytes per connection;
-- maximum pending commands and attention requests per Session;
+- maximum pending commands per Session;
 - retry count, elapsed window, delay ceiling, and jitter source;
 - lease duration and refresh;
 - heartbeat and idle timeouts;
@@ -819,13 +732,12 @@ Test layers:
    - bounded retry and give-up
    - unsupported Pi/protocol
    - no startup blocking
-   - no approval prompts or tool blocks
+   - no prompts or tool interception
 4. **External bridge**
    - ordinary TUI launch without flags
    - snapshot/update handoff
    - follow-up/steer/interrupt
    - model/thinking preferred and degraded modes
-   - optional question/approval on and off
    - reload/new/fork/resume/exit
    - broker/Conn restart and mixed versions
 5. **AppCore contract**
@@ -836,11 +748,10 @@ Test layers:
    - Project grouping only by proven Workspace
 6. **UI and Settings**
    - every setup/repair state
-   - independent optional toggles
    - pre-click Open availability
    - Pi excluded from New Session
    - Harness attribution/accessibility
-   - Compact Shelf and attention parity
+   - Compact Shelf parity
    - no Codex regression
 7. **Packaging**
    - bundled extension/resource hash
@@ -909,27 +820,21 @@ Tasks:
 
 1. Prove explicit `deliverAs: "followUp"` is safe when Pi is idle, busy, and
    changes state between Conn observation and command execution.
-2. Prove question-tool registration, deactivation, and broker-loss behavior
-   without disturbing unrelated active tools.
-3. Prove approval behavior when broker authority disappears while one exact
-   tool call is awaiting a decision.
-4. Measure extension startup latency with Conn absent and prove no synchronous
+2. Measure extension startup latency with Conn absent and prove no synchronous
    socket wait.
-5. Prove bounded retry, jitter, ceiling, give-up, and runtime-descriptor-change
+3. Prove bounded retry, jitter, ceiling, give-up, and runtime-descriptor-change
    wake-up.
-6. Prove unsupported Pi/protocol self-disable with no repeated prompt or loop.
-7. Attempt safe external terminal/window activation for `open`; record it
+4. Prove unsupported Pi/protocol self-disable with no repeated prompt or loop.
+5. Attempt safe external terminal/window activation for `open`; record it
    supported or unavailable.
-8. Empirically qualify scoped/configured models; if no bounded rule exists,
+6. Empirically qualify scoped/configured models; if no bounded rule exists,
    accept current-model-only degraded mode.
-9. Re-run the external parity matrix against the exact pinned Pi build.
+7. Re-run the external parity matrix against the exact pinned Pi build.
 
 Gate:
 
 - follow-up no longer relies on projected idle/busy state;
 - Conn absence is silent, bounded, inert, and non-blocking;
-- pending approval loss has one safe deterministic outcome;
-- question behavior is removable or truthfully reload-gated;
 - model qualification has a preferred or degraded contract;
 - Pi `open` has proof or is explicitly unavailable; and
 - all throwaway code remains outside production targets.
@@ -1023,30 +928,23 @@ Gate:
 
 Checkpoint intent: `feat: monitor external Pi Sessions`
 
-### Phase 4 — Implement controls and optional attention
+### Phase 4 — Implement standard controls
 
 Tasks:
 
 1. Implement explicit-mode follow-up, steer, and interrupt.
 2. Implement correlated model/thinking selection and readback.
 3. Implement current-model-only degraded catalog behavior.
-4. Implement the default-off structured-question tool and exact response
-   authority.
-5. Implement default-off approval mediation and the accepted broker-loss
-   behavior.
-6. Implement acknowledgement uncertainty and resolution-elsewhere mapping.
-7. Recompute capability and Session Action Availability on every authority,
-   optional-feature, and lifecycle transition.
+4. Implement acknowledgement uncertainty mapping.
+5. Recompute capability and Session Action Availability on every authority
+   and lifecycle transition.
 
 Gate:
 
 - the complete external control suite passes in the original Pi process;
 - state races do not change follow-up semantics;
-- optional features are absent when off and disclosed when on;
-- deny blocks before execution and approve authorizes one exact call;
-- broker loss never leaves permanent prompts or indefinite blocks;
 - no action is automatically replayed;
-- privacy canaries reject raw events, secrets, answers, and decisions; and
+- privacy canaries reject raw events and secrets; and
 - availability disappears immediately with authority.
 
 Checkpoint intent: `feat: control external Pi Sessions`
@@ -1057,13 +955,13 @@ Tasks:
 
 1. Compose Codex and `pi.external` simultaneously.
 2. Move launch-at-login into global Conn settings composition.
-3. Add Pi setup, diagnostics, optional toggles, update, disable, and uninstall
+3. Add Pi setup, diagnostics, update, disable, and uninstall
    UI.
 4. Add Pi Harness asset with provenance and license review.
 5. Route Open by Integration through the typed opener interface.
 6. Preserve Project grouping by proven Workspace identity.
-7. Present Pi Sessions, Activities, outcomes, notifications, Compact Shelf,
-   questions, and approvals through neutral UI.
+7. Present Pi Sessions, Activities, outcomes, notifications, and Compact
+   Shelf through neutral UI.
 8. Add accessible Harness labels and truthful unsupported-action copy.
 9. Keep Pi out of New Session creation UI.
 
@@ -1132,17 +1030,13 @@ Live Pi gate:
 3. Verify simultaneous discovery, identity, status, Activities, model, and
    thinking.
 4. Exercise idle follow-up, busy follow-up, steer, and interrupt.
-5. Enable questions, exercise one, disable them, and verify reload/inert
-   behavior.
-6. Enable approval mediation, exercise deny and approve, disable it, and prove
-   ordinary Pi behavior returns.
-7. Exercise reload, new, fork, resume, terminal exit, Conn restart,
+5. Exercise reload, new, fork, resume, terminal exit, Conn restart,
    sleep/wake, and mixed extension versions.
-8. Quit Conn and prove both TUIs continue with no Conn prompts, blocks, or
+6. Quit Conn and prove both TUIs continue with no Conn prompts, blocks, or
    retry loop.
-9. Delete a packaged test copy without uninstall and prove the orphaned
+7. Delete a packaged test copy without uninstall and prove the orphaned
    extension is inert.
-10. Reinstall and use recoverable uninstall; prove both TUIs remain running.
+8. Reinstall and use recoverable uninstall; prove both TUIs remain running.
 
 Release gate:
 
@@ -1220,7 +1114,8 @@ Approval of this revision accepts:
 
 1. v0.2.1 is external Pi TUI integration only.
 2. The broker lives in Conn; no Pi host/background helper ships.
-3. Approval mediation and the question tool are independent and default off.
+3. Questions, approvals, custom-tool registration, and tool interception are
+   outside the Pi Integration contract.
 4. Conn absence makes the extension silent and inert.
 5. Follow-up always uses explicit Pi delivery semantics after Phase 0 proof.
 6. Model selection degrades to current-model-only when qualification is not

@@ -3,9 +3,7 @@ import type {
 	ExtensionContext,
 	MessageEndEvent,
 	SessionStartEvent,
-	ToolCallEvent,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
 import { randomUUID } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
@@ -19,11 +17,6 @@ export const CONN_PI_SUPPORTED_VERSION = "0.82.1";
 export const CONN_PI_MAXIMUM_FRAME_BYTES = 64 * 1024;
 export const CONN_PI_RECONNECT_LIMIT = 6;
 
-export type OptionalFeatures = {
-	questionsEnabled: boolean;
-	approvalsEnabled: boolean;
-};
-
 export type RuntimeDescriptor = {
 	protocolVersion: number;
 	generation: string;
@@ -31,7 +24,6 @@ export type RuntimeDescriptor = {
 	authenticationSecret: string;
 	issuedAt: number;
 	expiresAt: number;
-	features: OptionalFeatures;
 };
 
 type Command = {
@@ -41,15 +33,6 @@ type Command = {
 	provider?: string;
 	modelId?: string;
 	level?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-	requestId?: string;
-	answer?: string;
-	decision?: "approve" | "deny";
-};
-
-type PendingAttention = {
-	kind: "question" | "approval";
-	resolve: (value: string) => void;
-	timer: NodeJS.Timeout;
 };
 
 const runtimeDescriptorPath =
@@ -87,36 +70,11 @@ export function parseRuntimeDescriptor(
 		typeof candidate.expiresAt !== "number" ||
 		candidate.issuedAt > now ||
 		candidate.expiresAt <= now ||
-		candidate.expiresAt - candidate.issuedAt > 300_000 ||
-		!candidate.features ||
-		typeof candidate.features.questionsEnabled !== "boolean" ||
-		typeof candidate.features.approvalsEnabled !== "boolean"
+		candidate.expiresAt - candidate.issuedAt > 300_000
 	) {
 		return undefined;
 	}
 	return candidate as RuntimeDescriptor;
-}
-
-export function approvalDisposition(
-	approvalsEnabled: boolean,
-	brokerWritable: boolean,
-	toolName: string,
-): "pass" | "ask" | "deny" {
-	if (!approvalsEnabled || ["read", "ls", "find", "grep"].includes(toolName)) {
-		return "pass";
-	}
-	return brokerWritable ? "ask" : "deny";
-}
-
-export function attentionMayRoute(
-	kind: "question" | "approval",
-	features: OptionalFeatures | undefined,
-	brokerWritable: boolean,
-): boolean {
-	return brokerWritable &&
-		(kind === "question"
-			? features?.questionsEnabled === true
-			: features?.approvalsEnabled === true);
 }
 
 export function parsePiPackageVersion(value: unknown): string | undefined {
@@ -187,10 +145,8 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 	let lastEvent = "extension_loaded";
 	let activeToolCount = 0;
 	let activitySequence = 0;
-	let questionToolRegistered = false;
 	let detectedPiVersion: string | undefined;
 	let versionDetectionAttempted = false;
-	const pendingAttention = new Map<string, PendingAttention>();
 
 	const state = () => ({
 		sessionId: context?.sessionManager.getSessionId() ?? null,
@@ -233,112 +189,6 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 		const active = socket;
 		socket = undefined;
 		active?.destroy();
-		for (const pending of pendingAttention.values()) {
-			clearTimeout(pending.timer);
-			pending.resolve(
-				pending.kind === "approval"
-					? "deny"
-					: "Conn is unavailable for this question",
-			);
-		}
-		pendingAttention.clear();
-	};
-
-	const requestAttention = (
-		kind: "question" | "approval",
-		request: Record<string, unknown>,
-	): Promise<string> => {
-		if (
-			!attentionMayRoute(
-				kind,
-				descriptor?.features,
-				socket?.writable === true,
-			)
-		) {
-			return Promise.resolve(
-				kind === "approval" ? "deny" : "Conn is unavailable for this question",
-			);
-		}
-		const id = `attention-${randomUUID()}`;
-		return new Promise((resolve) => {
-			const timer = setTimeout(() => {
-				pendingAttention.delete(id);
-				resolve(
-					kind === "approval"
-						? "deny"
-						: "Conn did not answer before the question expired",
-				);
-			}, 120_000);
-			pendingAttention.set(id, { kind, resolve, timer });
-			send({
-				type: "attention",
-				request: { id, kind, ...request },
-				state: state(),
-			});
-		});
-	};
-
-	const resolveAttention = (command: Command) => {
-		const pending = command.requestId
-			? pendingAttention.get(command.requestId)
-			: undefined;
-		if (!pending) throw new Error("attention request is not current");
-		let value: string;
-		if (pending.kind === "question") {
-			if (!command.answer) throw new Error("answer is required");
-			value = command.answer;
-		} else {
-			if (!["approve", "deny"].includes(command.decision ?? "")) {
-				throw new Error("approve or deny is required");
-			}
-			value = command.decision!;
-		}
-		clearTimeout(pending.timer);
-		pendingAttention.delete(command.requestId!);
-		pending.resolve(value);
-		send({
-			type: "attention_resolved",
-			requestId: command.requestId,
-			state: state(),
-		});
-	};
-
-	const ensureQuestionTool = () => {
-		if (questionToolRegistered || !descriptor?.features.questionsEnabled) return;
-		questionToolRegistered = true;
-		pi.registerTool({
-			name: "conn_question",
-			label: "Ask through Conn",
-			description:
-				"Ask the user one bounded, non-secret question through Conn.",
-			parameters: Type.Object(
-				{
-					id: Type.String({ minLength: 1, maxLength: 128 }),
-					header: Type.String({ minLength: 1, maxLength: 256 }),
-					prompt: Type.String({ minLength: 1, maxLength: 2_048 }),
-					choices: Type.Optional(
-						Type.Array(Type.String({ minLength: 1, maxLength: 512 }), {
-							maxItems: 8,
-						}),
-					),
-					permitsOther: Type.Optional(Type.Boolean()),
-				},
-				{ additionalProperties: false },
-			),
-			async execute(_toolCallId, params) {
-				const answer = await requestAttention("question", {
-					questionId: params.id,
-					header: params.header,
-					prompt: params.prompt,
-					choices: params.choices ?? [],
-					permitsOther: params.permitsOther ?? false,
-				});
-				return {
-					content: [{ type: "text", text: answer }],
-					details: { answeredThroughConn: socket?.writable === true },
-				};
-			},
-		});
 	};
 
 	const scheduleReconnect = () => {
@@ -397,11 +247,6 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 					pi.setThinkingLevel(command.level);
 					respond(command, true);
 					return;
-				case "answer":
-				case "decide":
-					resolveAttention(command);
-					respond(command, true);
-					return;
 				default:
 					throw new Error(`unsupported command: ${command.type ?? "<missing>"}`);
 			}
@@ -427,7 +272,6 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 		candidate.setEncoding("utf8");
 		candidate.once("connect", () => {
 			reconnectAttempt = 0;
-			ensureQuestionTool();
 			send({
 				type: "register",
 				protocol: CONN_PI_EXTENSION_PROTOCOL,
@@ -570,29 +414,6 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 	pi.on("agent_settled", observe("agent_settled"));
 	pi.on("model_select", observe("model_select"));
 	pi.on("thinking_level_select", observe("thinking_level_select"));
-	pi.on("tool_call", async (event: ToolCallEvent) => {
-		const toolName = String(event.toolName).slice(0, 512);
-		const disposition = approvalDisposition(
-			descriptor?.features.approvalsEnabled === true,
-			socket?.writable === true,
-			toolName,
-		);
-		if (disposition === "pass") return;
-		if (disposition === "deny") {
-			return {
-				block: true,
-				reason: "Conn approval mediation is enabled but unavailable",
-			};
-		}
-		const decision = await requestAttention("approval", {
-			prompt: `Allow Pi tool ${toolName}?`,
-			choices: ["approve", "deny"],
-			toolName,
-		});
-		if (decision !== "approve") {
-			return { block: true, reason: "Denied through Conn approval mediation" };
-		}
-	});
 	pi.on("message_end", (event, ctx) => {
 		context = ctx;
 		lastEvent = "message_end";

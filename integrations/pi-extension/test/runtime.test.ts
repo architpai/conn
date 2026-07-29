@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-	approvalDisposition,
-	attentionMayRoute,
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import connPiExtension, {
 	CONN_PI_EXTENSION_PROTOCOL,
 	parsePiPackageVersion,
 	parseRuntimeDescriptor,
@@ -17,10 +16,6 @@ const valid = {
 	authenticationSecret: "a".repeat(64),
 	issuedAt: now,
 	expiresAt: now + 30_000,
-	features: {
-		questionsEnabled: false,
-		approvalsEnabled: false,
-	},
 };
 
 test("accepts only a fresh compatible bounded runtime descriptor", () => {
@@ -43,15 +38,6 @@ test("accepts only a fresh compatible bounded runtime descriptor", () => {
 	);
 });
 
-test("attention routing follows the live feature gate", () => {
-	const disabled = { questionsEnabled: false, approvalsEnabled: false };
-	const questions = { questionsEnabled: true, approvalsEnabled: false };
-	assert.equal(attentionMayRoute("question", disabled, true), false);
-	assert.equal(attentionMayRoute("question", questions, false), false);
-	assert.equal(attentionMayRoute("question", questions, true), true);
-	assert.equal(attentionMayRoute("approval", questions, true), false);
-});
-
 test("accepts only the pinned Pi package identity for runtime qualification", () => {
 	assert.equal(
 		parsePiPackageVersion({
@@ -66,17 +52,27 @@ test("accepts only the pinned Pi package identity for runtime qualification", ()
 	);
 });
 
-test("approval mediation is default-pass, read-only-pass, and loss-deny", () => {
-	assert.equal(approvalDisposition(false, false, "bash"), "pass");
-	assert.equal(approvalDisposition(true, false, "read"), "pass");
-	assert.equal(approvalDisposition(true, false, "bash"), "deny");
-	assert.equal(approvalDisposition(true, true, "bash"), "ask");
-	assert.equal(approvalDisposition(true, false, "unknown-tool"), "deny");
-});
-
 test("reconnect backoff is bounded and jittered deterministically", () => {
 	assert.equal(reconnectDelay(0, 0), 150);
 	assert.equal(reconnectDelay(0, 1), 250);
 	assert.equal(reconnectDelay(20, 0), 1_500);
 	assert.equal(reconnectDelay(20, 1), 2_500);
+});
+
+test("the extension registers no custom tools or tool-call interception", () => {
+	const events: string[] = [];
+	let registeredTools = 0;
+	const pi = {
+		on(event: string) {
+			events.push(event);
+		},
+		registerTool() {
+			registeredTools += 1;
+		},
+	} as unknown as ExtensionAPI;
+
+	connPiExtension(pi);
+
+	assert.equal(registeredTools, 0);
+	assert.equal(events.includes("tool_call"), false);
 });

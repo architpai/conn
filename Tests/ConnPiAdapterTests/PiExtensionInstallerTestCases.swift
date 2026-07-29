@@ -28,54 +28,39 @@ enum PiExtensionInstallerTestCases {
             trashDirectory: trash
         )
         suite.check(installer.status() == .absent, "fresh Pi extension status is absent")
-        let installOutcome = try installer.install(configuration: .init())
+        let installOutcome = try installer.install()
         suite.check(
             installOutcome == .installed,
             "fresh install reports installed"
         )
-        guard case let .installed(version, configuration) = installer.status() else {
-            suite.fail("installed extension must report its exact version and configuration")
+        guard case let .installed(version) = installer.status() else {
+            suite.fail("installed extension must report its exact version")
             return
         }
         suite.check(version == "0.2.1", "ownership manifest records release version")
-        suite.check(
-            configuration == .init(),
-            "optional Pi behavior defaults remain disabled"
-        )
 
-        let enabled = PiExtensionBehaviorConfiguration(
-            questionsEnabled: true,
-            approvalsEnabled: false
-        )
-        let updateOutcome = try installer.install(configuration: enabled)
+        let updateOutcome = try installer.install()
         suite.check(
             updateOutcome == .updated,
             "owned reinstall atomically reports update"
         )
         suite.check(
-            installer.status() == .installed(version: "0.2.1", configuration: enabled),
-            "updated behavior configuration is verified"
+            installer.status() == .installed(version: "0.2.1"),
+            "updated extension ownership is verified"
         )
-        let behaviorURL = agent.appendingPathComponent(
-            "extensions/conn/behavior.json"
+        let installedSourceURL = agent.appendingPathComponent(
+            "extensions/conn/index.ts"
         )
-        let ownedBehavior = try Data(contentsOf: behaviorURL)
-        try Data(
-            """
-            {"questionsEnabled":false,"approvalsEnabled":true}
-            """.utf8
-        ).write(to: behaviorURL)
+        let ownedSource = try Data(contentsOf: installedSourceURL)
+        try Data("// changed\n".utf8).write(to: installedSourceURL)
         suite.check(
             installer.status() == .foreign,
-            "changed behavior configuration invalidates Conn ownership"
+            "changed extension source invalidates Conn ownership"
         )
-        try ownedBehavior.write(to: behaviorURL)
+        try ownedSource.write(to: installedSourceURL)
         suite.check(
-            installer.status() == .installed(
-                version: "0.2.1",
-                configuration: enabled
-            ),
-            "restoring the exact owned configuration restores verification"
+            installer.status() == .installed(version: "0.2.1"),
+            "restoring the exact owned source restores verification"
         )
         let uninstallOutcome = try installer.uninstall()
         suite.check(
@@ -115,7 +100,7 @@ enum PiExtensionInstallerTestCases {
         )
         suite.check(installer.status() == .foreign, "unmarked target is foreign")
         do {
-            _ = try installer.install(configuration: .init())
+            _ = try installer.install()
             suite.fail("install must refuse a foreign target")
         } catch PiExtensionInstallerError.foreignTarget {
             suite.check(true, "foreign install target failed closed")

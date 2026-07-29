@@ -25,7 +25,6 @@ enum PiRuntimeDescriptorTestCases {
 
         let descriptor = try store.publish(
             socketURL: socket,
-            features: .init(questionsEnabled: true, approvalsEnabled: false),
             now: now,
             timeToLive: 30
         )

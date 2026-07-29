@@ -14,8 +14,7 @@ enum PiLocalBrokerTestCases {
         let socketURL = root.appendingPathComponent("broker.sock")
         let broker = PiLocalBroker(
             runtimeStore: store,
-            socketURL: socketURL,
-            features: .init(questionsEnabled: false, approvalsEnabled: false)
+            socketURL: socketURL
         )
         do {
             let descriptor = try await broker.start(timeToLive: 30)

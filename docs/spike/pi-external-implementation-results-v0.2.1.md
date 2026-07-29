@@ -16,8 +16,9 @@ The implementation is intentionally not described as total Codex parity:
   implemented;
 - current-model display is implemented, but the catalog remains
   current-model-only until authenticated alternatives can be qualified;
-- structured questions and one-time approval mediation are implemented as
-  explicit default-off features;
+- structured questions, approvals, custom-tool registration, and tool
+  interception are out of scope because they are not standard Pi Session
+  concepts;
 - exact Pi terminal-window activation is unavailable;
 - Conn-created Pi Sessions and ad-hoc chats are unavailable.
 
@@ -30,7 +31,7 @@ The implementation is intentionally not described as total Codex parity:
 - Finder-safe discovery checks the login shell and known Node layouts,
   including NVM, without trusting Conn's inherited `PATH`.
 - Conn installs only
-  `~/.pi/agent/extensions/conn/{index.ts,behavior.json,.conn-install.json}`.
+  `~/.pi/agent/extensions/conn/{index.ts,.conn-install.json}`.
 - Conn does not edit Pi settings, package lists, project files, provider
   credentials, or existing Sessions.
 - Install and update are staged and verified. Foreign, symlinked, or changed
@@ -48,8 +49,7 @@ The implementation is intentionally not described as total Codex parity:
   escape hatch.
 - Control commands are correlated once. Timeout or connection loss becomes
   acknowledgement-uncertain and is never replayed.
-- A disconnected bridge invalidates current attention authority and the
-  Integration generation.
+- A disconnected bridge invalidates the Integration generation.
 
 ## Monitoring and controls
 
@@ -61,20 +61,12 @@ Implemented controls:
 
 - idle follow-up with explicit `deliverAs: "followUp"`;
 - busy follow-up with the same explicit delivery mode;
-- busy steering with explicit `deliverAs: "steer"`;
-- interrupt through the active Pi context's supported `abort()`;
-- exact structured-question answers; and
-- exact one-time approve or deny decisions.
+- busy steering with explicit `deliverAs: "steer"`; and
+- interrupt through the active Pi context's supported `abort()`.
 
-Approval mediation is a Conn policy, not a sandbox. It is default-off. When
-enabled, the read-only `read`, `ls`, `find`, and `grep` names pass through;
-write, edit, bash, and unknown tools require a live one-time decision. Broker
-loss denies rather than guessing. No raw tool arguments or shell command are
-sent to Conn.
-
-Disabling structured questions makes an already-registered question tool
-inert immediately. `/reload` is still required to remove that tool from an
-already-open Pi TUI because Pi 0.82.1 has no supported unregister operation.
+The extension does not register model-visible tools, intercept tool calls, or
+attempt to translate arbitrary user extensions. Codex-native question and
+approval behavior remains isolated to the Codex Integration.
 
 ## Live production proof
 
@@ -110,10 +102,10 @@ Validated after implementation:
 - ConnDomain: 76 assertions;
 - ConnAppCore: 243 assertions;
 - ConnCodexAdapter: 1,470 assertions;
-- ConnPiAdapter: 58 assertions;
+- ConnPiAdapter: 54 assertions;
 - ConnUI: 250 assertions;
 - Pi extension TypeScript type-check;
-- Pi extension Node tests: 5 passing;
+- Pi extension Node tests: 4 passing;
 - provider, Domain, Codex adapter, Pi adapter, and UI boundary scripts;
 - committed Codex App Server schemas for 0.144.5 and 0.144.6;
 - ad-hoc-signed packaged Conn app;
@@ -123,6 +115,5 @@ Validated after implementation:
 
 CodeRabbit CLI was not installed on this machine, so the final security pass
 was performed locally. It found and corrected release-resource omission,
-SIGPIPE exposure, disconnected approval pass-through, stale question feature
-routing, runtime Pi-version impersonation, Activity replacement, and
-configuration-tamper ownership gaps before this result was recorded.
+SIGPIPE exposure, runtime Pi-version impersonation, Activity replacement, and
+extension-source tamper detection gaps before this result was recorded.

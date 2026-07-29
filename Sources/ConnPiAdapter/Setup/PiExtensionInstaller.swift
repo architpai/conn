@@ -25,25 +25,9 @@ public enum PiExtensionResource {
     }
 }
 
-public struct PiExtensionBehaviorConfiguration: Codable, Equatable, Sendable {
-    public let questionsEnabled: Bool
-    public let approvalsEnabled: Bool
-
-    public init(
-        questionsEnabled: Bool = false,
-        approvalsEnabled: Bool = false
-    ) {
-        self.questionsEnabled = questionsEnabled
-        self.approvalsEnabled = approvalsEnabled
-    }
-}
-
 public enum PiExtensionInstallStatus: Equatable, Sendable {
     case absent
-    case installed(
-        version: String,
-        configuration: PiExtensionBehaviorConfiguration
-    )
+    case installed(version: String)
     case foreign
 }
 
@@ -121,43 +105,27 @@ public struct PiExtensionInstaller: Sendable {
             return .foreign
         }
         let manifestURL = targetDirectory.appendingPathComponent(".conn-install.json")
-        let configurationURL = targetDirectory.appendingPathComponent("behavior.json")
         let installedSourceURL = targetDirectory.appendingPathComponent("index.ts")
         guard isRegularFileWithoutSymlink(manifestURL),
-              isRegularFileWithoutSymlink(configurationURL),
               isRegularFileWithoutSymlink(installedSourceURL),
               let manifestData = try? Data(contentsOf: manifestURL),
               let manifest = try? JSONDecoder().decode(OwnershipManifest.self, from: manifestData),
               manifest.owner == Self.owner,
               manifest.protocolVersion == Self.extensionProtocolVersion,
               let installedData = try? Data(contentsOf: installedSourceURL),
-              manifest.contentSHA256 == sha256(installedData),
-              let configurationData = try? Data(contentsOf: configurationURL),
-              manifest.configurationSHA256 == sha256(configurationData),
-              let configuration = try? JSONDecoder().decode(
-                  PiExtensionBehaviorConfiguration.self,
-                  from: configurationData
-              )
+              manifest.contentSHA256 == sha256(installedData)
         else {
             return .foreign
         }
-        return .installed(
-            version: manifest.releaseVersion,
-            configuration: configuration
-        )
+        return .installed(version: manifest.releaseVersion)
     }
 
-    public func install(
-        configuration: PiExtensionBehaviorConfiguration
-    ) throws(PiExtensionInstallerError) -> PiExtensionInstallOutcome {
+    public func install() throws(PiExtensionInstallerError) -> PiExtensionInstallOutcome {
         let priorStatus = status()
         guard priorStatus != .foreign else { throw .foreignTarget }
         try validateInstallAncestors()
         guard let sourceData = try? Data(contentsOf: sourceURL), !sourceData.isEmpty else {
             throw .resourceUnavailable
-        }
-        guard let configurationData = try? encodedJSON(configuration) else {
-            throw .transactionFailed
         }
         let createsExtensionsDirectory = fileKind(extensionsDirectory) == .absent
         let preservesCreatedDirectoryOwnership =
@@ -187,18 +155,12 @@ public struct PiExtensionInstaller: Sendable {
                     to: staging.appendingPathComponent("index.ts"),
                     permissions: 0o600
                 )
-                try write(
-                    configurationData,
-                    to: staging.appendingPathComponent("behavior.json"),
-                    permissions: 0o600
-                )
                 try writeJSON(
                     OwnershipManifest(
                         owner: Self.owner,
                         protocolVersion: Self.extensionProtocolVersion,
                         releaseVersion: releaseVersion,
                         contentSHA256: sha256(sourceData),
-                        configurationSHA256: sha256(configurationData),
                         transactionID: transactionID,
                         createdExtensionsDirectory:
                             createsExtensionsDirectory
@@ -232,10 +194,7 @@ public struct PiExtensionInstaller: Sendable {
                     throw error
                 }
             }
-            guard status() == .installed(
-                version: releaseVersion,
-                configuration: configuration
-            ) else {
+            guard status() == .installed(version: releaseVersion) else {
                 throw PiExtensionInstallerError.verificationFailed
             }
             return priorStatus == .absent ? .installed : .updated
@@ -346,7 +305,6 @@ private struct OwnershipManifest: Codable {
     let protocolVersion: Int
     let releaseVersion: String
     let contentSHA256: String
-    let configurationSHA256: String
     let transactionID: UUID
     let createdExtensionsDirectory: Bool
 }

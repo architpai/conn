@@ -232,59 +232,9 @@ public struct PiBridgeResponseFrame: Equatable, Sendable {
     public let state: PiBridgeState
 }
 
-public struct PiBridgeAttentionRequest: Codable, Equatable, Sendable {
-    public let id: String
-    public let kind: String
-    public let questionID: String?
-    public let header: String?
-    public let prompt: String
-    public let choices: [String]
-    public let permitsOther: Bool?
-    public let toolName: String?
-
-    fileprivate var isValid: Bool {
-        !id.isEmpty
-            && id.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
-            && ["question", "approval"].contains(kind)
-            && prompt.utf8.count <= 2_048
-            && choices.count <= 8
-            && choices.allSatisfy {
-                !$0.isEmpty && $0.utf8.count <= 512
-            }
-            && (kind != "question" || (
-                questionID?.isEmpty == false
-                    && header?.isEmpty == false
-            ))
-            && (kind != "approval" || toolName?.isEmpty == false)
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case kind
-        case questionID = "questionId"
-        case header
-        case prompt
-        case choices
-        case permitsOther
-        case toolName
-    }
-}
-
-public struct PiBridgeAttentionFrame: Equatable, Sendable {
-    public let request: PiBridgeAttentionRequest
-    public let state: PiBridgeState
-}
-
-public struct PiBridgeAttentionResolvedFrame: Equatable, Sendable {
-    public let requestID: String
-    public let state: PiBridgeState
-}
-
 public enum PiBrokerMessage: Equatable, Sendable {
     case event(PiBridgeEventFrame)
     case response(PiBridgeResponseFrame)
-    case attention(PiBridgeAttentionFrame)
-    case attentionResolved(PiBridgeAttentionResolvedFrame)
 }
 
 public enum PiBrokerMessageDecoder {
@@ -337,26 +287,6 @@ public enum PiBrokerMessageDecoder {
                     error: wire.error,
                     state: wire.state
                 ))
-            case "attention":
-                let wire = try decoder.decode(WireAttention.self, from: data)
-                guard wire.state.isValid, wire.request.isValid else {
-                    throw PiBrokerProtocolError.invalidField
-                }
-                return .attention(.init(
-                    request: wire.request,
-                    state: wire.state
-                ))
-            case "attention_resolved":
-                let wire = try decoder.decode(WireAttentionResolved.self, from: data)
-                guard wire.state.isValid,
-                      !wire.requestID.isEmpty,
-                      wire.requestID.utf8.count
-                        <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
-                else { throw PiBrokerProtocolError.invalidField }
-                return .attentionResolved(.init(
-                    requestID: wire.requestID,
-                    state: wire.state
-                ))
             default:
                 throw PiBrokerProtocolError.unsupportedMessage
             }
@@ -374,8 +304,6 @@ public enum PiBrokerCommand: Equatable, Sendable {
     case interrupt(id: String)
     case setModel(id: String, provider: String, modelID: String)
     case setThinking(id: String, level: String)
-    case answer(id: String, requestID: String, answer: String)
-    case decide(id: String, requestID: String, approve: Bool)
 
     public var id: String {
         switch self {
@@ -383,9 +311,7 @@ public enum PiBrokerCommand: Equatable, Sendable {
              let .steer(id, _),
              let .interrupt(id),
              let .setModel(id, _, _),
-             let .setThinking(id, _),
-             let .answer(id, _, _),
-             let .decide(id, _, _):
+             let .setThinking(id, _):
             id
         }
     }
@@ -418,18 +344,6 @@ public enum PiBrokerCommandEncoder {
             guard validIdentifier(level) else { throw .invalidField }
             object["type"] = "set_thinking"
             object["level"] = level
-        case let .answer(_, requestID, answer):
-            guard validIdentifier(requestID), validMessage(answer) else {
-                throw .invalidField
-            }
-            object["type"] = "answer"
-            object["requestId"] = requestID
-            object["answer"] = answer
-        case let .decide(_, requestID, approve):
-            guard validIdentifier(requestID) else { throw .invalidField }
-            object["type"] = "decide"
-            object["requestId"] = requestID
-            object["decision"] = approve ? "approve" : "deny"
         }
         do {
             var data = try JSONSerialization.data(
@@ -470,19 +384,4 @@ private struct WireResponse: Decodable {
     let success: Bool
     let error: String?
     let state: PiBridgeState
-}
-
-private struct WireAttention: Decodable {
-    let request: PiBridgeAttentionRequest
-    let state: PiBridgeState
-}
-
-private struct WireAttentionResolved: Decodable {
-    let requestID: String
-    let state: PiBridgeState
-
-    private enum CodingKeys: String, CodingKey {
-        case requestID = "requestId"
-        case state
-    }
 }

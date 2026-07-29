@@ -1,16 +1,6 @@
 import Darwin
 import Foundation
 
-public struct PiBrokerOptionalFeatures: Codable, Equatable, Sendable {
-    public let questionsEnabled: Bool
-    public let approvalsEnabled: Bool
-
-    public init(questionsEnabled: Bool, approvalsEnabled: Bool) {
-        self.questionsEnabled = questionsEnabled
-        self.approvalsEnabled = approvalsEnabled
-    }
-}
-
 public struct PiBrokerRuntimeDescriptor:
     Codable, Equatable, Sendable, CustomStringConvertible
 {
@@ -20,13 +10,12 @@ public struct PiBrokerRuntimeDescriptor:
     public let authenticationSecret: String
     public let issuedAt: Date
     public let expiresAt: Date
-    public let features: PiBrokerOptionalFeatures
 
     public var description: String {
         "PiBrokerRuntimeDescriptor(protocolVersion: \(protocolVersion), "
             + "generation: \(generation), socketPath: \(socketPath), "
             + "authenticationSecret: <redacted>, issuedAt: \(issuedAt), "
-            + "expiresAt: \(expiresAt), features: \(features))"
+            + "expiresAt: \(expiresAt))"
     }
 }
 
@@ -56,7 +45,6 @@ public struct PiRuntimeDescriptorStore: Sendable {
 
     public func publish(
         socketURL: URL,
-        features: PiBrokerOptionalFeatures,
         now: Date = Date(),
         timeToLive: TimeInterval = 30
     ) throws(PiRuntimeDescriptorError) -> PiBrokerRuntimeDescriptor {
@@ -95,8 +83,7 @@ public struct PiRuntimeDescriptorStore: Sendable {
                 socketPath: socketURL.standardizedFileURL.path,
                 authenticationSecret: makeSecret(),
                 issuedAt: issuedAt,
-                expiresAt: issuedAt.addingTimeInterval(timeToLive),
-                features: features
+                expiresAt: issuedAt.addingTimeInterval(timeToLive)
             )
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .millisecondsSince1970
@@ -172,8 +159,7 @@ public struct PiRuntimeDescriptorStore: Sendable {
             socketPath: descriptor.socketPath,
             authenticationSecret: descriptor.authenticationSecret,
             issuedAt: refreshedIssuedAt,
-            expiresAt: refreshedIssuedAt.addingTimeInterval(timeToLive),
-            features: descriptor.features
+            expiresAt: refreshedIssuedAt.addingTimeInterval(timeToLive)
         )
         do {
             let encoder = JSONEncoder()
