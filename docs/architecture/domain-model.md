@@ -2,10 +2,9 @@
 
 Conn is a notch-anchored macOS companion that lets people supervise Codex work while keeping their attention on other activities.
 
-This document describes the currently shipped v0.1 Codex/App Server model.
 The accepted provider-neutral v0.2 vocabulary is in
-[`CONTEXT.md`](../../CONTEXT.md), with the migration sequence in the
-[v0.2 architecture plan](./conn-v0.2-provider-neutral-plan.md).
+[`CONTEXT.md`](../../CONTEXT.md). The durable architecture decision is recorded
+in [ADR 0005](../adr/0005-provider-neutral-conn-integration-boundary.md).
 
 This vocabulary documents the product and architecture boundaries used by the
 Conn codebase. In particular, Conn observes and controls supported operations;
