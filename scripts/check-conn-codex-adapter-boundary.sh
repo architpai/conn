@@ -18,7 +18,7 @@ else
     fi
 fi
 
-raw_neutral_names='AppServer|ConnAppServer|JSONRPC|JSONValue|ControlEndpoint|SharedDesktop|Transport|WebSocket|Stdio'
+raw_neutral_names='AppServer|ConnAppServer|JSONRPC|JSONValue|ControlEndpoint|SharedDesktop|Transport|WebSocket|Stdio|PiBroker|PiExternal|ExtensionAPI|deliverAs|conn_question'
 if raw_matches=$(rg -n "$raw_neutral_names" \
     Sources/ConnDomain/ConnIntegration.swift \
     Sources/ConnDomain/ConnIntegrationModels.swift \

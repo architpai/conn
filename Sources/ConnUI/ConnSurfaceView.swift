@@ -453,11 +453,13 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             Text(session.statusLabel)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(toneColor(session.tone))
-            Button("Open") {
-                model.openSelectedInHarness()
+            if model.canOpenInHarness(session.id) {
+                Button("Open") {
+                    model.openSelectedInHarness()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
         .padding(14)
     }

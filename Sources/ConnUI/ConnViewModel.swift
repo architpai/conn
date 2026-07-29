@@ -59,7 +59,7 @@ public final class ConnViewModel: ObservableObject {
 
     private let coordinator: ConnIntegrationCoordinator
     private let harnessAssets: [HarnessID: String]
-    private let openHarness: @Sendable (ConnSessionID) async -> Bool
+    private let sessionOpener: AnyConnSessionOpener
     private var stateTask: Task<Void, Never>?
     private let compactNotificationLifetime =
         ConnCompactNotificationLifetimeController()
@@ -73,12 +73,12 @@ public final class ConnViewModel: ObservableObject {
     public init(
         coordinator: ConnIntegrationCoordinator,
         harnessAssets: [HarnessID: String] = [:],
-        openHarness: @escaping @Sendable (ConnSessionID) async -> Bool = { _ in false },
+        sessionOpener: AnyConnSessionOpener = .unavailable,
         defaults: UserDefaults = .standard
     ) {
         self.coordinator = coordinator
         self.harnessAssets = harnessAssets
-        self.openHarness = openHarness
+        self.sessionOpener = sessionOpener
         self.appearance = defaults.string(forKey: "conn.appearance")
             .flatMap(ShellAppearance.init(rawValue:)) ?? .dark
         self.defaultWorkspace = defaults.string(forKey: "conn.defaultWorkspace") ?? ""
@@ -320,8 +320,14 @@ public final class ConnViewModel: ObservableObject {
         guard let selectedSession else { return }
         let sessionID = selectedSession.id
         let harnessName = selectedSession.harness.label
-        Task { [weak self, openHarness] in
-            let opened = await openHarness(sessionID)
+        guard case .available = sessionOpener.availability(for: sessionID) else {
+            if case let .unavailable(reason) = sessionOpener.availability(for: sessionID) {
+                actionError = reason
+            }
+            return
+        }
+        Task { [weak self, sessionOpener] in
+            let opened = await sessionOpener.open(sessionID)
             guard let self else { return }
             if opened {
                 actionNotice = "Opened in \(harnessName)"
@@ -329,6 +335,10 @@ public final class ConnViewModel: ObservableObject {
                 actionError = "\(harnessName) could not be opened"
             }
         }
+    }
+
+    public func canOpenInHarness(_ sessionID: ConnSessionID) -> Bool {
+        sessionOpener.availability(for: sessionID) == .available
     }
 
     public func submitComposer() {

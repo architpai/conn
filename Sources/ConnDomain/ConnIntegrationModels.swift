@@ -447,7 +447,6 @@ public struct ConnSession: Codable, Equatable, Identifiable, Sendable {
 // MARK: - Capabilities and actions
 
 public enum ConnActionKind: String, Codable, Hashable, Sendable {
-    case open
     case createSession
     case followUp
     case steer
@@ -704,7 +703,6 @@ public struct ConnStructuredAnswers: Equatable, Sendable {
 }
 
 public enum ConnAction: Equatable, Sendable {
-    case open(sessionID: ConnSessionID)
     case createSession(
         integrationID: IntegrationID,
         workspacePath: ConnWorkspacePath,
@@ -731,7 +729,6 @@ public enum ConnAction: Equatable, Sendable {
 
     public var kind: ConnActionKind {
         switch self {
-        case .open: .open
         case .createSession: .createSession
         case .followUp: .followUp
         case .steer: .steer
@@ -745,8 +742,7 @@ public enum ConnAction: Equatable, Sendable {
         switch self {
         case let .createSession(integrationID, _, _, _):
             integrationID
-        case let .open(sessionID),
-             let .followUp(sessionID, _, _),
+        case let .followUp(sessionID, _, _),
              let .steer(sessionID, _, _),
              let .interrupt(sessionID, _),
              let .answer(sessionID, _, _),

@@ -128,13 +128,6 @@ public actor CodexIntegration: ConnIntegration {
         }
 
         switch action {
-        case .open:
-            return outcome(
-                for: action,
-                .unavailable,
-                "Opening Codex is composed by ConnApp, not an App Server action"
-            )
-
         case let .createSession(_, workspacePath, initialPrompt, modelSelection):
             let catalog = await runtime.loadNewThreadModelCatalog()
             guard catalog.outcome == .available,

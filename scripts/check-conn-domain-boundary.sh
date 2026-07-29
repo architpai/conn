@@ -5,7 +5,7 @@ set -eu
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repository_root"
 
-forbidden_imports='^import (ConnAppCore|ConnAppServerAdapter|ConnCodexAdapter|ConnUI|AppKit|SwiftUI)([[:space:]]|$)'
+forbidden_imports='^import (ConnAppCore|ConnAppServerAdapter|ConnCodexAdapter|ConnPiAdapter|ConnUI|AppKit|SwiftUI)([[:space:]]|$)'
 
 if forbidden_matches=$(rg -n "$forbidden_imports" Sources/ConnDomain); then
     printf '%s\n' "$forbidden_matches"

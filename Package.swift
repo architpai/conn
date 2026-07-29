@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "ConnDomain", targets: ["ConnDomain"]),
         .library(name: "ConnAppCore", targets: ["ConnAppCore"]),
         .library(name: "ConnCodexAdapter", targets: ["ConnCodexAdapter"]),
+        .library(name: "ConnPiAdapter", targets: ["ConnPiAdapter"]),
         .library(name: "ConnUI", targets: ["ConnUI"]),
         .executable(name: "Conn", targets: ["ConnApp"]),
         .executable(name: "conn-domain-tests", targets: ["ConnDomainTests"]),
@@ -18,6 +19,10 @@ let package = Package(
         .executable(
             name: "conn-codex-adapter-tests",
             targets: ["ConnCodexAdapterTests"]
+        ),
+        .executable(
+            name: "conn-pi-adapter-tests",
+            targets: ["ConnPiAdapterTests"]
         ),
         .executable(name: "conn-ui-tests", targets: ["ConnUITests"]),
         .executable(name: "conn-packaging-probe", targets: ["ConnPackagingProbe"]),
@@ -34,6 +39,7 @@ let package = Package(
                 "ConnDomain",
                 "ConnAppCore",
                 "ConnCodexAdapter",
+                "ConnPiAdapter",
                 "ConnUI",
             ]
         ),
@@ -48,11 +54,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "ConnAppCoreTests",
-            dependencies: [
-                "ConnAppCore",
-                "ConnDomain",
-                "ConnCodexAdapter",
-            ],
+            dependencies: ["ConnAppCore", "ConnDomain"],
             path: "Tests/ConnAppCoreTests"
         ),
         .target(
@@ -63,6 +65,16 @@ let package = Package(
             name: "ConnCodexAdapterTests",
             dependencies: ["ConnCodexAdapter", "ConnAppCore", "ConnDomain"],
             path: "Tests/ConnCodexAdapterTests"
+        ),
+        .target(
+            name: "ConnPiAdapter",
+            dependencies: ["ConnDomain"],
+            resources: [.process("Resources")]
+        ),
+        .executableTarget(
+            name: "ConnPiAdapterTests",
+            dependencies: ["ConnPiAdapter", "ConnDomain"],
+            path: "Tests/ConnPiAdapterTests"
         ),
         .executableTarget(
             name: "ConnUITests",

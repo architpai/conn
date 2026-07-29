@@ -398,7 +398,7 @@ public actor ConnIntegrationCoordinator {
         switch action {
         case .createSession:
             return true
-        case let .open(sessionID), let .followUp(sessionID, _, _):
+        case let .followUp(sessionID, _, _):
             return projection.sessionsByID[sessionID] != nil
                 && projection.hasCurrentAuthority(for: sessionID)
         case let .steer(sessionID, runID, _),
@@ -619,7 +619,6 @@ public actor ConnIntegrationCoordinator {
 
 private extension ConnActionKind {
     static let allCasesForAvailability: [ConnActionKind] = [
-        .open,
         .createSession,
         .followUp,
         .steer,

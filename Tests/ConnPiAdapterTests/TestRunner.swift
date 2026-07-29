@@ -1,16 +1,11 @@
 import Foundation
 
 @main
-private enum ConnUITestRunner {
-    static func main() async {
+private enum ConnPiAdapterTestRunner {
+    static func main() {
         var suite = TestSuite()
-
-        Phase8ShellRegressionTestCases.run(into: &suite)
-        Phase87ShellTestCases.run(into: &suite)
-        Phase115UIOverhaulTestCases.run(into: &suite)
-        Phase115CompactShelfMotionTestCases.run(into: &suite)
-        await ConnSessionOpenerTestCases.run(into: &suite)
-        await V02CandidateRegressionTestCases.run(into: &suite)
+        PiAdapterSeamTestCases.run(into: &suite)
+        PiBrokerHandshakeTestCases.run(into: &suite)
 
         if suite.failures.isEmpty {
             print("PASS: \(suite.assertions) assertions")

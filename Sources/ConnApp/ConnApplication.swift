@@ -104,10 +104,26 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
             let codexHarnessAssets = Self.registerCodexHarnessAsset().map {
                 [CodexIntegrationIdentity.harnessID: $0]
             } ?? [:]
+            let codexOpenAvailable = NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: "com.openai.codex"
+            ) != nil
+            let sessionOpener = AnyConnSessionOpener(
+                availability: { sessionID in
+                    sessionID.integrationID == CodexIntegrationIdentity.integrationID
+                        && codexOpenAvailable
+                        ? .available
+                        : .unavailable(
+                            reason: sessionID.integrationID.rawValue == "pi.external"
+                                ? "Exact Pi terminal activation is unavailable"
+                                : "The original Harness is unavailable"
+                        )
+                },
+                open: Self.openCodex
+            )
             let viewModel = ConnViewModel(
                 coordinator: coordinator,
                 harnessAssets: codexHarnessAssets,
-                openHarness: Self.openCodex
+                sessionOpener: sessionOpener
             )
             let settingsModel = CodexIntegrationSettingsModel(integration: codex)
             let panel = ConnPanelController(model: viewModel) {
