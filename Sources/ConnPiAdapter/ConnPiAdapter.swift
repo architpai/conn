@@ -311,30 +311,25 @@ public actor PiExternalIntegration: ConnIntegration {
                 )
             ]
         }
-        let activityKind: ConnActivityKind = switch activity?.kind {
-        case "userMessage": .userMessage
-        case "agentMessage": .agentMessage
-        case "toolCall": .toolCall
-        default: switch event {
-        case "tool_execution_start", "tool_execution_end": .toolCall
-        case "turn_start", "turn_end": .agentMessage
-        default: .unknown
+        var activities = previous?.activities ?? []
+        if let activity {
+            let activityKind: ConnActivityKind = switch activity.kind {
+            case "userMessage": .userMessage
+            case "agentMessage": .agentMessage
+            case "toolCall": .toolCall
+            default: .unknown
+            }
+            let activityRunID = priorActiveRun?.id
+                ?? (state.isIdle ? nil : activeRunID)
+            activities.append(ConnActivity(
+                id: .init(rawValue: activity.id),
+                runID: activityRunID,
+                kind: activityKind,
+                status: event.hasSuffix("_end") ? .completed : .started,
+                summary: activity.text,
+                observedAt: observedAt
+            ))
         }
-        }
-        let activityRunID = priorActiveRun?.id
-            ?? (state.isIdle ? nil : activeRunID)
-        let activityID = activity?.id
-            ?? "\(sessionID)-\(event)-\(observedAt.timeIntervalSince1970)"
-        let mappedActivity = ConnActivity(
-            id: .init(rawValue: activityID),
-            runID: activityRunID,
-            kind: activityKind,
-            status: event.hasSuffix("_end") ? .completed : .started,
-            summary: activity?.text
-                ?? event.replacingOccurrences(of: "_", with: " "),
-            observedAt: observedAt
-        )
-        let activities = (previous?.activities ?? []) + [mappedActivity]
         return .init(
             id: .init(
                 integrationID: PiExternalIntegrationIdentity.integrationID,

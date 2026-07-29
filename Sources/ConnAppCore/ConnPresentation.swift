@@ -371,7 +371,9 @@ public enum ConnPresentationBuilder {
         case .stale: .stale
         case .idle, .unknown: .neutral
         }
-        let activities = state.session.activities.map(activity)
+        let activities = state.session.activities
+            .filter(isUserFacingActivity)
+            .map(activity)
         let activitiesByRun = Dictionary(grouping: activities) {
             $0.activity.runID
         }
@@ -505,6 +507,21 @@ public enum ConnPresentationBuilder {
             detail: activity.summary,
             tone: tone
         )
+    }
+
+    private static func isUserFacingActivity(
+        _ activity: ConnActivity
+    ) -> Bool {
+        guard activity.kind != .unknown else { return false }
+        guard let summary = activity.summary?.lowercased() else { return true }
+        let legacyLifecycleEvents = [
+            "turn start",
+            "turn end",
+            "tool execution end",
+        ]
+        guard legacyLifecycleEvents.contains(summary) else { return true }
+        let event = summary.replacingOccurrences(of: " ", with: "_")
+        return !activity.id.rawValue.contains("-\(event)-")
     }
 
     private static func projectName(_ path: String) -> String {

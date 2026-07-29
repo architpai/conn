@@ -72,6 +72,18 @@ enum Phase3CodexIntegrationMappingTestCases {
                                 status: .unknown,
                                 startedAt: at(2)
                             ),
+                            .init(
+                                id: .init(rawValue: "sleep-item"),
+                                kind: .sleep,
+                                status: .completed,
+                                startedAt: at(2)
+                            ),
+                            .init(
+                                id: .init(rawValue: "review-mode-item"),
+                                kind: .enteredReviewMode,
+                                status: .completed,
+                                startedAt: at(2)
+                            ),
                         ]
                     ),
                     .init(
@@ -204,10 +216,10 @@ enum Phase3CodexIntegrationMappingTestCases {
         suite.checkEqual(
             session?.activities.map(\.kind),
             [
-                .command, .unknown,
+                .command,
                 .userMessage, .reasoning, .toolCall, .agentMessage,
             ],
-            "Turns become chronological blocks without reversing their Item order"
+            "Turns retain semantic Items in order without leaking internal lifecycle state"
         )
         suite.check(
             session?.activities.first?.summary == "swift build"

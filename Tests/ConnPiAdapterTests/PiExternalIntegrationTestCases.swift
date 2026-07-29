@@ -48,6 +48,45 @@ enum PiExternalIntegrationTestCases {
                 "Pi Session identity and external ownership map neutrally"
             )
 
+            try PiLocalBrokerTestCases.writeLine(
+                """
+                {"type":"event","event":"agent_start","state":\(stateJSON(isIdle: false, lastEvent: "agent_start"))}
+                """,
+                to: client.descriptor
+            )
+            guard let lifecycleUpdate = await iterator.next(),
+                  case let .sessionUpsert(lifecycleSession) =
+                    lifecycleUpdate.update else {
+                suite.fail("Pi lifecycle state must upsert the Session")
+                Darwin.close(client.descriptor)
+                await integration.disconnect()
+                return
+            }
+            suite.check(
+                lifecycleSession.status == .working
+                    && lifecycleSession.activities.isEmpty,
+                "Pi lifecycle state stays internal instead of leaking into the transcript"
+            )
+
+            try PiLocalBrokerTestCases.writeLine(
+                """
+                {"type":"event","event":"tool_execution_start","state":\(stateJSON(isIdle: false, lastEvent: "tool_execution_start")),"activity":{"id":"custom-tool-1","kind":"toolCall","text":"acme_custom_tool"}}
+                """,
+                to: client.descriptor
+            )
+            guard let toolUpdate = await iterator.next(),
+                  case let .sessionUpsert(toolSession) = toolUpdate.update else {
+                suite.fail("Pi custom tool activity must upsert the Session")
+                Darwin.close(client.descriptor)
+                await integration.disconnect()
+                return
+            }
+            suite.check(
+                toolSession.activities.map(\.summary) == ["acme_custom_tool"]
+                    && toolSession.activities.last?.kind == .toolCall,
+                "Pi preserves arbitrary custom tool calls as transcript activity"
+            )
+
             let followUp = try ConnActionText("continue")
             let action = ConnAction.followUp(
                 sessionID: session.id,
@@ -102,9 +141,9 @@ enum PiExternalIntegrationTestCases {
                 return
             }
             suite.check(
-                firstActivitySession.activities.count == 1
+                firstActivitySession.activities.count == 2
                     && secondActivitySession.activities.map(\.id.rawValue)
-                        == ["activity-1", "activity-2"],
+                        == ["custom-tool-1", "activity-1", "activity-2"],
                 "successive Pi state updates retain bounded Session activity history"
             )
 

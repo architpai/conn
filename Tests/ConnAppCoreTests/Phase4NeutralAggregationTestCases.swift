@@ -622,6 +622,50 @@ enum Phase4NeutralAggregationTestCases {
             [.completed],
             "completed Sessions remain represented in the status display"
         )
+        let legacyLifecycle = ConnActivity(
+            id: .init(rawValue: "session-turn_end-123"),
+            runID: firstRun.id,
+            kind: .agentMessage,
+            status: .completed,
+            summary: "turn end",
+            observedAt: at(2)
+        )
+        let legacyUnknown = ConnActivity(
+            id: .init(rawValue: "session-agent_settled-124"),
+            runID: firstRun.id,
+            kind: .unknown,
+            status: .completed,
+            summary: "agent settled",
+            observedAt: at(2)
+        )
+        let customTool = ConnActivity(
+            id: .init(rawValue: "custom-tool"),
+            runID: firstRun.id,
+            kind: .toolCall,
+            status: .completed,
+            summary: "acme_custom_tool",
+            observedAt: at(2)
+        )
+        let sanitized = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: sessionID,
+                status: .completed,
+                runs: [firstRun],
+                activities: [
+                    firstActivity,
+                    legacyLifecycle,
+                    legacyUnknown,
+                    customTool,
+                ],
+                updatedAt: at(2)
+            ),
+            revision: 2
+        )).sessions.first
+        suite.checkEqual(
+            sanitized?.activities.map(\.detail),
+            ["First bounded message", "acme_custom_tool"],
+            "restored lifecycle pollution is hidden without suppressing custom tools"
+        )
         let idlePresentation = ConnPresentationBuilder.make(aggregate(
             session: .init(
                 id: .init(

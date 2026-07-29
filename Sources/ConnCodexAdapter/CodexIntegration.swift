@@ -794,8 +794,9 @@ package enum CodexProjectionMapper {
         }
         let activities = chronologicalTurns.reduce(into: [ConnActivity]()) {
             result, turn in
-            result.append(contentsOf: turn.items.map { item in
-                ConnActivity(
+            result.append(contentsOf: turn.items.compactMap { item in
+                guard isTranscriptActivity(item.kind) else { return nil }
+                return ConnActivity(
                     id: .init(rawValue: "\(turn.id.rawValue):\(item.id.rawValue)"),
                     runID: .init(rawValue: turn.id.rawValue),
                     kind: activityKind(item.kind),
@@ -830,6 +831,17 @@ package enum CodexProjectionMapper {
             issues: issue,
             updatedAt: thread.updatedAt
         )
+    }
+
+    private static func isTranscriptActivity(
+        _ kind: AppServerItemKind
+    ) -> Bool {
+        switch kind {
+        case .sleep, .enteredReviewMode, .exitedReviewMode, .unknown:
+            false
+        default:
+            true
+        }
     }
 
     private static func capabilities(

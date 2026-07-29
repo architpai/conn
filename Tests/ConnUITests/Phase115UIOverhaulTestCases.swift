@@ -453,6 +453,16 @@ enum Phase115UIOverhaulTestCases {
             40,
             "the eagerly laid out transcript remains strictly bounded"
         )
+        suite.checkEqual(
+            Array(ShellTranscriptActivityPolicy.visibleSuffix(Array(0..<100))),
+            Array(60..<100),
+            "the transcript renders only its newest bounded activity suffix"
+        )
+        suite.check(
+            !ShellTranscriptActivityPolicy.shouldRenderDetails(isExpanded: false)
+                && ShellTranscriptActivityPolicy.shouldRenderDetails(isExpanded: true),
+            "collapsed Runs do not construct hidden transcript detail rows"
+        )
         suite.check(
             ShellTranscriptActivityPolicy.expansionState(
                 stored: nil,

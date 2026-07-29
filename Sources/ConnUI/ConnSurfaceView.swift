@@ -296,6 +296,10 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
         if model.showsNewSessionComposer {
             newSessionDetail
         } else if let session = model.selectedSession {
+            let visibleActivities = Array(
+                ShellTranscriptActivityPolicy.visibleSuffix(session.activities)
+            )
+            let visibleActivityIDs = Set(visibleActivities.map(\.id))
             VStack(spacing: 0) {
                 sessionHeader(session)
                 Divider().opacity(0.35)
@@ -314,10 +318,20 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                             )
                             .padding(.top, 80)
                         } else {
-                            ForEach(session.runs) { run in
-                                runRow(run, sessionID: session.id)
+                            ForEach(session.runs.filter { run in
+                                run.activities.contains {
+                                    visibleActivityIDs.contains($0.id)
+                                }
+                            }) { run in
+                                runRow(
+                                    visibleRun(
+                                        run,
+                                        activityIDs: visibleActivityIDs
+                                    ),
+                                    sessionID: session.id
+                                )
                             }
-                            ForEach(session.activities.filter {
+                            ForEach(visibleActivities.filter {
                                 $0.activity.runID == nil
                             }) { activity in
                                 activityRow(activity)
@@ -341,6 +355,28 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
         }
     }
 
+    private func visibleRun(
+        _ run: ConnRunPresentation,
+        activityIDs: Set<ActivityID>
+    ) -> ConnRunPresentation {
+        let activities = run.activities.filter {
+            activityIDs.contains($0.id)
+        }
+        return .init(
+            run: run.run,
+            title: run.title,
+            triggeringUserMessage: activities.first {
+                $0.activity.kind == .userMessage
+            }?.detail,
+            summary: activities.last {
+                $0.activity.kind == .agentMessage
+            }?.detail,
+            workedForLabel: run.workedForLabel,
+            activities: activities,
+            isCollapsedByDefault: run.isCollapsedByDefault
+        )
+    }
+
     private func runRow(
         _ run: ConnRunPresentation,
         sessionID: ConnSessionID
@@ -356,15 +392,19 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             set: { runExpansion[expansionKey] = $0 }
         )
         return DisclosureGroup(isExpanded: isExpanded) {
-            LazyVStack(alignment: .leading, spacing: 10) {
-                ForEach(run.activities) { activity in
-                    activityRow(activity)
+            if ShellTranscriptActivityPolicy.shouldRenderDetails(
+                isExpanded: isExpanded.wrappedValue
+            ) {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(run.activities) { activity in
+                        activityRow(activity)
+                    }
+                    if let workedForLabel = run.workedForLabel {
+                        runDurationFooter(workedForLabel)
+                    }
                 }
-                if let workedForLabel = run.workedForLabel {
-                    runDurationFooter(workedForLabel)
-                }
+                .padding(.top, 10)
             }
-            .padding(.top, 10)
         } label: {
             VStack(alignment: .leading, spacing: 10) {
                 if !isExpanded.wrappedValue,
