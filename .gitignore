@@ -30,6 +30,9 @@ marketing/
 mock/
 plans/
 *_RESULTS.md
+docs/architecture/*-phase*-results.md
+docs/architecture/*-phase*-parity-contract.md
+docs/architecture/*-provider-neutral-plan.md
 
 # Release output and signing material
 dist/

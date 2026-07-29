@@ -2,7 +2,8 @@
 
 ## Supported platform
 
-Conn 0.1.1 supports Apple Silicon Macs on macOS 15.0 or later. It requires an
+Conn 0.2.0 Alpha supports Apple Silicon Macs on macOS 15.0 or later. Codex is
+the only supported harness in v0.2. It requires an
 authenticated Codex CLI/App Server version `0.144.5` or `0.144.6`; other
 versions fail closed instead of guessing at protocol compatibility.
 
@@ -16,24 +17,29 @@ The expected output is `codex-cli 0.144.5` or `codex-cli 0.144.6`.
 
 ## Install the release build
 
-1. Download `Conn-0.1.1-macos-arm64.zip` and its `.sha256` file from the
+1. Download `Conn-0.2.0-macos-arm64.zip` and its `.sha256` file from the
    [latest GitHub release](https://github.com/architpai/conn/releases/latest).
 2. In Terminal, change to the download directory and verify the archive:
 
    ```sh
-   shasum -a 256 -c Conn-0.1.1-macos-arm64.zip.sha256
-   ditto -x -k Conn-0.1.1-macos-arm64.zip Conn-0.1.1
-   cd Conn-0.1.1
-   shasum -a 256 -c Conn-0.1.1-adhoc.dmg.sha256
+   shasum -a 256 -c Conn-0.2.0-macos-arm64.zip.sha256
+   ditto -x -k Conn-0.2.0-macos-arm64.zip Conn-0.2.0
+   cd Conn-0.2.0
+   shasum -a 256 -c Conn-0.2.0-adhoc.dmg.sha256
    ```
 
-3. Open `Conn-0.1.1-adhoc.dmg` and drag **Conn** into **Applications**.
+3. Open `Conn-0.2.0-adhoc.dmg` and drag **Conn** into **Applications**.
 4. Because this alpha is ad-hoc signed and not notarized, open it the first time
    by Control-clicking `/Applications/Conn.app`, choosing **Open**, and then
    choosing **Open** again. If macOS still blocks it, open **System Settings →
    Privacy & Security** and use **Open Anyway** for Conn.
 5. Conn appears at the top center of the display. Managed Daemon Mode is ready
    without a plugin or hook installation.
+
+The ad-hoc alpha cannot register **Launch Conn at login** with macOS. That
+setting remains visibly unavailable until Conn is signed with a Developer ID
+identity; launch-at-login support is part of the signed distribution path
+planned before Conn leaves alpha.
 
 Do not enable Shared Desktop Mode for the basic test path. It is an optional
 Labs feature with a separate qualification and rollback guide in
@@ -52,7 +58,8 @@ open .build/conn-app
 
 Drag `Conn.app` from the Finder window into `/Applications`, then use the same
 Control-click **Open** flow described above. The build script creates an ad-hoc
-signature locally and verifies the bundle before returning success.
+signature locally and verifies the bundle before returning success. As with the
+downloadable alpha, an ad-hoc source build cannot register Launch Conn at login.
 
 To install from Terminal instead of Finder:
 
@@ -64,9 +71,10 @@ open /Applications/Conn.app
 ## Verify a source build
 
 ```sh
-swift run conn-app-server-adapter-tests
+swift run conn-codex-adapter-tests
 swift run conn-domain-tests
 swift run conn-app-core-tests
+swift run conn-ui-tests
 ./scripts/test-inspect-release.sh
 ./scripts/inspect-release.sh --app "$PWD/.build/conn-app/Conn.app"
 ```
@@ -78,10 +86,10 @@ present in the built application.
 ## Troubleshooting
 
 - **App Server version incompatible:** install or select Codex `0.144.5` or
-  `0.144.6`. Conn 0.1.1 deliberately rejects newer or unknown versions.
-- **No threads are visible:** Managed Daemon Mode only shows threads connected
+  `0.144.6`. Conn 0.2.0 deliberately rejects newer or unknown versions.
+- **No Sessions are visible:** Managed Daemon Mode only shows Sessions connected
   through the Codex-managed daemon. It does not claim every local Desktop, CLI,
-  IDE, cloud, or web thread.
+  IDE, cloud, or web Session.
 - **Conn is stale:** restore the managed-daemon connection and use **Sync**.
 - **Shared Desktop setup is unavailable:** leave the Labs feature off; it is not
   required for normal operation.

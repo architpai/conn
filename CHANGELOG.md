@@ -6,10 +6,99 @@ public alpha releases.
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed the landing page, repository banner, and public documentation to
+  match the current provider-neutral v0.2 Session UI.
+- The public product mock now demonstrates visible-set status counts, harness
+  attribution, grouped Run summaries, elapsed work time, the compact
+  model-and-reasoning picker, and draft-first New Session flow.
+- The native Conn mark now carries the same slow orbit as the landing page and
+  becomes static when Reduce Motion is enabled.
+- The landing-page mock now uses OpenAI's supplied monochrome mark and synthetic
+  Aurora and Beacon fixtures instead of private project references.
+- Documented that the ad-hoc alpha cannot register Launch Conn at login; that
+  capability requires the planned Developer ID-signed distribution.
+
 ### Planned
 
 - Broader Codex App Server version compatibility.
 - Continued accessibility, interaction, and release-hardening work.
+
+## [0.2.0] - 2026-07-25
+
+Continued alpha release.
+
+### Added
+
+- An internal provider-neutral Integration API covering Harnesses,
+  Integrations, Sessions, Runs, Activities, Attention Requests, capabilities,
+  action authority, and ordered updates.
+- Multi-Integration aggregation and isolation contract tests using the real
+  Codex-shaped fixture and a synthetic monitor-only Integration.
+- Provider-neutral `ConnUI`, a typed Integration-settings composition slot,
+  clean v0.2 projection persistence, and explicit Harness attribution.
+- Exact-identity confirmation UI for removing the retired Sidequest plugin.
+
+### Changed
+
+- Generic product language now uses Sessions rather than Threads.
+- App Server protocol, projection, control, and Shared Desktop types are
+  confined to `ConnCodexAdapter`; Domain, AppCore, and UI no longer import it.
+- The disposable v0.1 projection and outcome baseline are intentionally reset.
+- The compact notification shelf is again one integrated notch surface with a
+  visible countdown and automatic expiry.
+- The built-in display header now preserves physical-notch safe wings while
+  external displays retain the full compact status wording.
+- Session history now presents Turns oldest-first while preserving canonical
+  user, reasoning, tool, and assistant Item order inside each Turn.
+- Clicking unused space in the expanded Conn header now collapses the surface
+  without stealing clicks from its embedded controls.
+- Chronological Session history now opens at its newest tail and resets to the
+  tail when switching Sessions.
+- Model selection is restored for new Sessions and idle follow-ups through a
+  provider-neutral, Integration-supplied model catalog.
+- Model and reasoning are separate composer controls; each model exposes only
+  its Integration-advertised reasoning choices.
+- User messages use the trailing transcript lane while Harness messages,
+  reasoning, and tool activity use the leading lane.
+- The compact Conn bar now uses the same full-width toggle target as the
+  expanded bar.
+- User and Harness messages now use directional speech bubbles while reasoning,
+  tool calls, and other operational Activities remain distinct cards.
+- Completed Runs collapse into provider-neutral summary blocks and expand to
+  reveal their complete chronological Activity sequence.
+- Collapsed Runs retain a compact preview of the User message that initiated
+  them and show their elapsed work time when the Integration supplies both
+  start and completion timestamps.
+- The follow-up composer combines Model and Reasoning into one compact control;
+  a small popover retains independent, model-filtered selectors.
+
+### Fixed
+
+- Anchor Conn to the physical notch edge on built-in notched MacBook displays
+  while retaining menu-bar clearance on external displays.
+- Make every Shared Desktop diagnosis visibly confirm completion, show the
+  bounded host-version tuple, and explain when the tuple is candidate-only.
+- Preserve the selected opaque model ID across Conn's action boundary and
+  revalidate it against the current Codex App Server catalog before sending.
+- Show the current Session's actual model and reasoning effort instead of the
+  ambiguous `Current model` placeholder.
+- Preserve multiline user and Harness message content through the neutral
+  Domain and show the full Harness answer in a completed Run summary.
+- Replace speech-bubble tails with clean asymmetric continuous corners so long
+  messages no longer produce a lower-edge geometry artifact.
+- Restore standard macOS Edit responder commands so copy, paste, cut, undo,
+  redo, and select-all work in the follow-up composer and other text fields.
+- Replace the ambiguous `C` Harness fallback with the installed OpenAI
+  Codex/ChatGPT application icon while retaining `Codex` as the accessible
+  Integration label.
+
+### Known limitations
+
+- Codex is the only supported Harness in v0.2. Claude Code, Pi, OpenCode, and
+  other adapters are foundation work only, not product claims.
+- This remains alpha software. The local ad-hoc artifact is not notarized.
 
 ## [0.1.1] - 2026-07-22
 
@@ -52,6 +141,7 @@ Initial alpha release.
 - Ad-hoc artifacts are for local testing only; public distribution requires a
   Developer ID signature and notarization.
 
-[Unreleased]: https://github.com/architpai/conn/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/architpai/conn/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/architpai/conn/releases/tag/v0.2.0
 [0.1.1]: https://github.com/architpai/conn/releases/tag/v0.1.1
 [0.1.0]: https://github.com/architpai/conn/releases/tag/v0.1.0

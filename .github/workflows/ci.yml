@@ -41,8 +41,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build Conn
         run: swift build
-      - name: App Server adapter tests
-        run: '"$(swift build --show-bin-path)/conn-app-server-adapter-tests"'
+      - name: Codex adapter tests
+        run: '"$(swift build --show-bin-path)/conn-codex-adapter-tests" --portable'
       - name: Domain tests
         run: '"$(swift build --show-bin-path)/conn-domain-tests"'
       # The app-core suite exercises macOS session and workspace behavior that

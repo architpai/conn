@@ -28,7 +28,9 @@ Build the app and run the executable test harnesses from the repository root:
 swift build
 swift run conn-domain-tests
 swift run conn-app-core-tests
-swift run conn-app-server-adapter-tests
+swift run conn-codex-adapter-tests
+swift run conn-ui-tests
+./scripts/check-provider-boundaries.sh
 ./scripts/test-inspect-release.sh
 ```
 
@@ -60,8 +62,9 @@ verification but do not replace it.
 
 ## Architecture and safety boundaries
 
-Conn is a client of Codex's App Server integration. Codex retains ownership of
-threads, turns, subprocesses, and permission requests. Contributions must not:
+Conn's core is provider-neutral and v0.2 composes only the Codex Integration.
+Codex retains ownership of Sessions, Runs, subprocesses, and permission
+requests. Contributions must not:
 
 - claim visibility or control that the active App Server connection cannot
   prove;
@@ -70,6 +73,10 @@ threads, turns, subprocesses, and permission requests. Contributions must not:
 - persist raw prompts, transcripts, tool payloads, credentials, or approval
   contents beyond an explicitly documented product need; or
 - present an experimental integration as a supported OpenAI contract.
+
+Provider protocol types, wire payloads, and response tokens must remain inside
+the adapter. New harness support requires its own documented qualification and
+must not weaken the neutral Domain, AppCore, or UI boundaries.
 
 Version compatibility changes must be backed by generated protocol artifacts,
 tests, and an explicit review of the supported-version boundary.

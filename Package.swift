@@ -10,24 +10,35 @@ let package = Package(
     products: [
         .library(name: "ConnDomain", targets: ["ConnDomain"]),
         .library(name: "ConnAppCore", targets: ["ConnAppCore"]),
-        .library(name: "ConnAppServerAdapter", targets: ["ConnAppServerAdapter"]),
+        .library(name: "ConnCodexAdapter", targets: ["ConnCodexAdapter"]),
+        .library(name: "ConnUI", targets: ["ConnUI"]),
         .executable(name: "Conn", targets: ["ConnApp"]),
         .executable(name: "conn-domain-tests", targets: ["ConnDomainTests"]),
         .executable(name: "conn-app-core-tests", targets: ["ConnAppCoreTests"]),
         .executable(
-            name: "conn-app-server-adapter-tests",
-            targets: ["ConnAppServerAdapterTests"]
+            name: "conn-codex-adapter-tests",
+            targets: ["ConnCodexAdapterTests"]
         ),
+        .executable(name: "conn-ui-tests", targets: ["ConnUITests"]),
         .executable(name: "conn-packaging-probe", targets: ["ConnPackagingProbe"]),
     ],
     targets: [
         .target(name: "ConnDomain"),
         .target(
             name: "ConnAppCore",
-            dependencies: ["ConnDomain", "ConnAppServerAdapter"]
+            dependencies: ["ConnDomain"]
         ),
         .executableTarget(
             name: "ConnApp",
+            dependencies: [
+                "ConnDomain",
+                "ConnAppCore",
+                "ConnCodexAdapter",
+                "ConnUI",
+            ]
+        ),
+        .target(
+            name: "ConnUI",
             dependencies: ["ConnDomain", "ConnAppCore"]
         ),
         .executableTarget(
@@ -40,15 +51,27 @@ let package = Package(
             dependencies: [
                 "ConnAppCore",
                 "ConnDomain",
-                "ConnAppServerAdapter",
+                "ConnCodexAdapter",
             ],
             path: "Tests/ConnAppCoreTests"
         ),
-        .target(name: "ConnAppServerAdapter"),
+        .target(
+            name: "ConnCodexAdapter",
+            dependencies: ["ConnDomain"]
+        ),
         .executableTarget(
-            name: "ConnAppServerAdapterTests",
-            dependencies: ["ConnAppServerAdapter"],
-            path: "Tests/ConnAppServerAdapterTests"
+            name: "ConnCodexAdapterTests",
+            dependencies: ["ConnCodexAdapter", "ConnAppCore", "ConnDomain"],
+            path: "Tests/ConnCodexAdapterTests"
+        ),
+        .executableTarget(
+            name: "ConnUITests",
+            dependencies: [
+                "ConnUI",
+                "ConnAppCore",
+                "ConnDomain",
+            ],
+            path: "Tests/ConnUITests"
         ),
         .executableTarget(name: "ConnPackagingProbe"),
     ]
