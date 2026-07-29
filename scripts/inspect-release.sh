@@ -151,6 +151,17 @@ pi_resource_bundle="$app_bundle/Contents/Resources/Conn_ConnPiAdapter.bundle"
   print -u2 "Conn release is missing its regular bundled Pi extension."
   exit 1
 }
+pi_badge="$pi_resource_bundle/PiHarnessBadge.svg"
+[[ -s "$pi_badge" && ! -L "$pi_badge" ]] || {
+  print -u2 "Conn release is missing its regular official Pi harness badge."
+  exit 1
+}
+expected_pi_badge_sha256="a5624bc3b8cac94de75f6f13701eca2ad3ef67bbeba286c4af3f398806f0858a"
+actual_pi_badge_sha256="$(shasum -a 256 "$pi_badge" | awk '{print $1}')"
+[[ "$actual_pi_badge_sha256" == "$expected_pi_badge_sha256" ]] || {
+  print -u2 "Conn release contains an unexpected Pi harness badge."
+  exit 1
+}
 
 for distribution_document in LICENSE NOTICE ACKNOWLEDGEMENTS.md; do
   document_path="$app_bundle/Contents/Resources/$distribution_document"

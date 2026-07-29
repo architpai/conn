@@ -12,6 +12,22 @@ public enum PiExternalIntegrationIdentity {
     )
 }
 
+public enum PiHarnessAsset {
+    public static let officialSourceURL = URL(
+        string: "https://pi.dev/favicon.svg"
+    )!
+
+    public static var bundledBadgeURL: URL {
+        guard let url = Bundle.module.url(
+            forResource: "PiHarnessBadge",
+            withExtension: "svg"
+        ) else {
+            preconditionFailure("ConnPiAdapter is missing PiHarnessBadge.svg")
+        }
+        return url
+    }
+}
+
 public actor PiExternalIntegration: ConnIntegration {
     public nonisolated let descriptor = PiExternalIntegrationIdentity.descriptor
     private let broker: PiLocalBroker

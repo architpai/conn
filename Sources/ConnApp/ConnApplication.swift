@@ -108,9 +108,13 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
                 integrations: [codex, pi],
                 checkpointStore: store
             )
-            let codexHarnessAssets = Self.registerCodexHarnessAsset().map {
+            var harnessAssets = Self.registerCodexHarnessAsset().map {
                 [CodexIntegrationIdentity.harnessID: $0]
             } ?? [:]
+            if let piHarnessAsset = Self.registerPiHarnessAsset() {
+                harnessAssets[PiExternalIntegrationIdentity.harnessID] =
+                    piHarnessAsset
+            }
             let codexOpenAvailable = NSWorkspace.shared.urlForApplication(
                 withBundleIdentifier: "com.openai.codex"
             ) != nil
@@ -129,7 +133,7 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
             )
             let viewModel = ConnViewModel(
                 coordinator: coordinator,
-                harnessAssets: codexHarnessAssets,
+                harnessAssets: harnessAssets,
                 sessionOpener: sessionOpener
             )
             let settingsModel = CodexIntegrationSettingsModel(integration: codex)
@@ -280,6 +284,14 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
         ) else { return nil }
         let image = highResolutionOpenAIMark(applicationURL: applicationURL)
             ?? NSWorkspace.shared.icon(forFile: applicationURL.path)
+        return image.setName(assetName) ? assetName : nil
+    }
+
+    private static func registerPiHarnessAsset() -> String? {
+        let assetName = NSImage.Name("PiHarness")
+        guard let image = NSImage(
+            contentsOf: PiHarnessAsset.bundledBadgeURL
+        ) else { return nil }
         return image.setName(assetName) ? assetName : nil
     }
 

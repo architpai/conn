@@ -53,3 +53,11 @@ is the unmodified monochrome template asset supplied by the installed ChatGPT
 application. It is used only to identify the directly related OpenAI
 Integration and remains subject to OpenAI's
 [design guidelines](https://openai.com/brand/) and marks usage terms.
+
+## Pi badge
+
+The Pi badge bundled with Conn is the unmodified compact badge published in
+Pi's official [press kit](https://pi.dev/press-kit). It is used only to identify
+the Pi integration. Pi is distributed under the MIT License; the Pi name and
+mark remain the property of their respective owners. This acknowledgement does
+not imply endorsement or affiliation.

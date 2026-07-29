@@ -17,6 +17,9 @@ print 'notice fixture' > "$app/Contents/Resources/NOTICE"
 print 'acknowledgements fixture' > "$app/Contents/Resources/ACKNOWLEDGEMENTS.md"
 print 'export default function connPiExtension() {}' \
   > "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/index.ts"
+cp \
+  "$script_dir/../Sources/ConnPiAdapter/Resources/PiHarnessBadge.svg" \
+  "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/PiHarnessBadge.svg"
 
 "$script_dir/inspect-release.sh" --app "$app" >/dev/null
 
@@ -30,6 +33,17 @@ fi
 mv \
   "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/index.ts.missing" \
   "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/index.ts"
+
+mv \
+  "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/PiHarnessBadge.svg" \
+  "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/PiHarnessBadge.svg.missing"
+if "$script_dir/inspect-release.sh" --app "$app" >/dev/null 2>&1; then
+  print -u2 "inspect-release accepted an app without its Pi harness badge"
+  exit 1
+fi
+mv \
+  "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/PiHarnessBadge.svg.missing" \
+  "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/PiHarnessBadge.svg"
 
 mv "$app/Contents/Resources/NOTICE" "$app/Contents/Resources/NOTICE.missing"
 if "$script_dir/inspect-release.sh" --app "$app" >/dev/null 2>&1; then
