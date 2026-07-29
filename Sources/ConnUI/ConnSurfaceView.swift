@@ -296,10 +296,6 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
         if model.showsNewSessionComposer {
             newSessionDetail
         } else if let session = model.selectedSession {
-            let visibleActivities = Array(
-                ShellTranscriptActivityPolicy.visibleSuffix(session.activities)
-            )
-            let visibleActivityIDs = Set(visibleActivities.map(\.id))
             VStack(spacing: 0) {
                 sessionHeader(session)
                 Divider().opacity(0.35)
@@ -318,20 +314,10 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                             )
                             .padding(.top, 80)
                         } else {
-                            ForEach(session.runs.filter { run in
-                                run.activities.contains {
-                                    visibleActivityIDs.contains($0.id)
-                                }
-                            }) { run in
-                                runRow(
-                                    visibleRun(
-                                        run,
-                                        activityIDs: visibleActivityIDs
-                                    ),
-                                    sessionID: session.id
-                                )
+                            ForEach(session.runs) { run in
+                                runRow(run, sessionID: session.id)
                             }
-                            ForEach(visibleActivities.filter {
+                            ForEach(session.activities.filter {
                                 $0.activity.runID == nil
                             }) { activity in
                                 activityRow(activity)
@@ -353,28 +339,6 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-    }
-
-    private func visibleRun(
-        _ run: ConnRunPresentation,
-        activityIDs: Set<ActivityID>
-    ) -> ConnRunPresentation {
-        let activities = run.activities.filter {
-            activityIDs.contains($0.id)
-        }
-        return .init(
-            run: run.run,
-            title: run.title,
-            triggeringUserMessage: activities.first {
-                $0.activity.kind == .userMessage
-            }?.detail,
-            summary: activities.last {
-                $0.activity.kind == .agentMessage
-            }?.detail,
-            workedForLabel: run.workedForLabel,
-            activities: activities,
-            isCollapsedByDefault: run.isCollapsedByDefault
-        )
     }
 
     private func runRow(

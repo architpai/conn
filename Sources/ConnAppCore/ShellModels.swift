@@ -1407,14 +1407,6 @@ public enum ShellGraphiteChromePolicy {
 }
 
 public enum ShellTranscriptActivityPolicy {
-    public static let maximumVisibleEntryCount = 40
-
-    public static func visibleSuffix<Element>(
-        _ entries: [Element]
-    ) -> ArraySlice<Element> {
-        entries.suffix(maximumVisibleEntryCount)
-    }
-
     public static func shouldRenderDetails(isExpanded: Bool) -> Bool {
         isExpanded
     }

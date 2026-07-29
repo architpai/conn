@@ -448,16 +448,6 @@ enum Phase115UIOverhaulTestCases {
             ),
             "idle historical activity remains collapsed"
         )
-        suite.checkEqual(
-            ShellTranscriptActivityPolicy.maximumVisibleEntryCount,
-            40,
-            "the eagerly laid out transcript remains strictly bounded"
-        )
-        suite.checkEqual(
-            Array(ShellTranscriptActivityPolicy.visibleSuffix(Array(0..<100))),
-            Array(60..<100),
-            "the transcript renders only its newest bounded activity suffix"
-        )
         suite.check(
             !ShellTranscriptActivityPolicy.shouldRenderDetails(isExpanded: false)
                 && ShellTranscriptActivityPolicy.shouldRenderDetails(isExpanded: true),
