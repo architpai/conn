@@ -178,6 +178,10 @@ enum Phase87ShellTestCases {
             showsSessionDetail: true
         )
         suite.checkEqual(clamped.frame.height, 460, "expanded target remains within the short screen's visible bounds")
+        suite.check(
+            shortDisplay.visibleFrame.contains(clamped.frame),
+            "expanded geometry is clamped inside a short display's visible frame"
+        )
     }
 
     private static func testGraphitePreferences(into suite: inout TestSuite) {

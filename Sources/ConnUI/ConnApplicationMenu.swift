@@ -27,12 +27,12 @@ public enum ConnApplicationMenu {
         editItem.submenu = editMenu
         editMenu.addItem(
             withTitle: "Undo",
-            action: #selector(UndoManager.undo),
+            action: Selector(("undo:")),
             keyEquivalent: "z"
         )
         let redo = editMenu.addItem(
             withTitle: "Redo",
-            action: #selector(UndoManager.redo),
+            action: Selector(("redo:")),
             keyEquivalent: "Z"
         )
         redo.keyEquivalentModifierMask = [.command, .shift]

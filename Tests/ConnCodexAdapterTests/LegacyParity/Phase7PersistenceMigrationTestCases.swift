@@ -123,7 +123,10 @@ enum Phase7PersistenceMigrationTestCases {
             let url = store.rootDirectory.appendingPathComponent(name)
             return (try? Data(contentsOf: url).count)
         }
-        suite.check(slotSizes.allSatisfy { $0 <= maximumBytes }, "byte-aware persistence never writes beyond its envelope")
+        suite.check(
+            !slotSizes.isEmpty && slotSizes.allSatisfy { $0 <= maximumBytes },
+            "byte-aware persistence writes a measurable slot within its envelope"
+        )
         suite.check(loaded != nil, "count-cap stress checkpoint remains restorable after byte trimming")
         suite.check(
             (loaded?.threads.flatMap(\.turns).count ?? 0)

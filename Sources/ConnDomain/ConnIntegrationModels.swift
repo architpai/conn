@@ -350,7 +350,7 @@ public struct AttentionRequest: Equatable, Identifiable, Sendable {
         self.sessionID = sessionID
         self.runID = runID
         self.kind = kind
-        self.content = content ?? {
+        let defaultContent: AttentionRequestContent = {
             switch kind {
             case .approval:
                 .approval(availableDecisions: [.approve, .deny])
@@ -361,6 +361,15 @@ public struct AttentionRequest: Equatable, Identifiable, Sendable {
                 )
             }
         }()
+        switch (kind, content) {
+        case (.approval, .approval),
+             (.structuredQuestion, .structuredQuestions):
+            self.content = content ?? defaultContent
+        case (_, nil),
+             (.approval, .structuredQuestions),
+             (.structuredQuestion, .approval):
+            self.content = defaultContent
+        }
         self.summary = ConnDomainBounds.boundedSingleLine(
             summary,
             maximumUTF8Bytes: bounds.maximumSummaryUTF8Bytes
@@ -761,12 +770,17 @@ public struct ConnActionOutcome: Equatable, Sendable {
     public let action: ConnActionKind
     public let kind: ConnActionOutcomeKind
     public let evidence: String?
+    /// Exact identity allocated by a successful create action. Adapters may
+    /// also provide it for uncertain acknowledgements when allocation is
+    /// known, but callers must not treat uncertainty as permission to retry.
+    public let createdSessionID: ConnSessionID?
 
     public init(
         integrationID: IntegrationID,
         action: ConnActionKind,
         kind: ConnActionOutcomeKind,
         evidence: String? = nil,
+        createdSessionID: ConnSessionID? = nil,
         bounds: ConnDomainBounds = .default
     ) {
         self.integrationID = integrationID
@@ -775,6 +789,10 @@ public struct ConnActionOutcome: Equatable, Sendable {
         self.evidence = evidence.map {
             ConnDomainBounds.boundedSingleLine($0, maximumUTF8Bytes: bounds.maximumSummaryUTF8Bytes)
         }
+        self.createdSessionID = action == .createSession
+            && createdSessionID?.integrationID == integrationID
+            ? createdSessionID
+            : nil
     }
 }
 

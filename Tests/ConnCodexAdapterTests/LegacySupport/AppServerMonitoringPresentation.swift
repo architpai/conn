@@ -291,7 +291,7 @@ public struct AppServerTimelineItemPresentation: Equatable, Sendable, Identifiab
                 maximumUTF8Bytes: Self.maximumExpandedFinalAnswerUTF8Bytes
             )
             : nil
-        isDetailTruncated = expandedFinalDetail != self.detail
+        isDetailTruncated = isAgentAuthoredText && expandedFinalDetail != self.detail
         expandedDetail = isDetailTruncated ? expandedFinalDetail : nil
         self.statusLabel = statusLabel
         self.observedLabel = observedLabel

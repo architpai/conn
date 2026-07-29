@@ -155,7 +155,17 @@ public struct ConnProjectionCheckpointFileStore: ConnProjectionCheckpointStore, 
             )
             var data = try Self.encoder().encode(wrapper)
             while data.count > maximumCheckpointBytes {
-                guard let trimmed = byteTrimmed(wrapper.checkpoint) else {
+                let removableCount = trimUnitCount(wrapper.checkpoint)
+                let excessRatio = Double(data.count - maximumCheckpointBytes)
+                    / Double(data.count)
+                let removalCount = max(
+                    1,
+                    Int(ceil(Double(removableCount) * max(excessRatio, 0.05)))
+                )
+                guard let trimmed = byteTrimmed(
+                    wrapper.checkpoint,
+                    removingAtLeast: removalCount
+                ) else {
                     throw ConnProjectionCheckpointFileStoreError.checkpointTooLarge(
                         maximumBytes: maximumCheckpointBytes
                     )
@@ -181,59 +191,67 @@ public struct ConnProjectionCheckpointFileStore: ConnProjectionCheckpointStore, 
     /// recent Session rows. Attention, authority, capabilities, and drafts are
     /// absent from this schema by construction.
     private func byteTrimmed(
-        _ checkpoint: ConnProjectionCheckpoint
+        _ checkpoint: ConnProjectionCheckpoint,
+        removingAtLeast removalTarget: Int
     ) -> ConnProjectionCheckpoint? {
         var integrations = checkpoint.integrations
+        var remaining = removalTarget
 
         for integrationIndex in integrations.indices.reversed() {
             var sessions = integrations[integrationIndex].sessions
             for sessionIndex in sessions.indices.reversed() {
                 let session = sessions[sessionIndex]
                 if !session.activities.isEmpty {
+                    let count = min(remaining, session.activities.count)
                     sessions[sessionIndex] = replacing(
                         session,
-                        activities: Array(session.activities.dropFirst())
+                        activities: Array(session.activities.dropFirst(count))
                     )
-                    integrations[integrationIndex] = replacing(
-                        integrations[integrationIndex],
-                        sessions: sessions
-                    )
-                    return ConnProjectionCheckpoint(
-                        format: checkpoint.format,
-                        schemaVersion: checkpoint.schemaVersion,
-                        integrations: integrations
-                    )
+                    remaining -= count
                 }
-                if !session.issues.isEmpty {
+                if remaining > 0, !session.issues.isEmpty {
+                    let count = min(remaining, session.issues.count)
                     sessions[sessionIndex] = replacing(
-                        session,
-                        issues: Array(session.issues.dropFirst())
+                        sessions[sessionIndex],
+                        issues: Array(session.issues.dropFirst(count))
                     )
-                    integrations[integrationIndex] = replacing(
-                        integrations[integrationIndex],
-                        sessions: sessions
-                    )
-                    return ConnProjectionCheckpoint(
-                        format: checkpoint.format,
-                        schemaVersion: checkpoint.schemaVersion,
-                        integrations: integrations
-                    )
+                    remaining -= count
                 }
+                if remaining == 0 { break }
             }
-            if !sessions.isEmpty {
-                sessions.removeLast()
+            integrations[integrationIndex] = replacing(
+                integrations[integrationIndex],
+                sessions: sessions
+            )
+            if remaining == 0 { break }
+        }
+        if remaining > 0 {
+            for integrationIndex in integrations.indices.reversed() {
+                var sessions = integrations[integrationIndex].sessions
+                let count = min(remaining, sessions.count)
+                sessions.removeLast(count)
+                remaining -= count
                 integrations[integrationIndex] = replacing(
                     integrations[integrationIndex],
                     sessions: sessions
                 )
-                return ConnProjectionCheckpoint(
-                    format: checkpoint.format,
-                    schemaVersion: checkpoint.schemaVersion,
-                    integrations: integrations
-                )
+                if remaining == 0 { break }
             }
         }
-        return nil
+        guard remaining < removalTarget else { return nil }
+        return ConnProjectionCheckpoint(
+            format: checkpoint.format,
+            schemaVersion: checkpoint.schemaVersion,
+            integrations: integrations
+        )
+    }
+
+    private func trimUnitCount(_ checkpoint: ConnProjectionCheckpoint) -> Int {
+        checkpoint.integrations.reduce(0) { integrationTotal, integration in
+            integrationTotal + integration.sessions.reduce(0) { sessionTotal, session in
+                sessionTotal + session.activities.count + session.issues.count + 1
+            }
+        }
     }
 
     private func replacing(

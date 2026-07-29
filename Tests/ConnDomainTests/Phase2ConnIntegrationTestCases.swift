@@ -98,6 +98,25 @@ enum Phase2ConnIntegrationTestCases {
         } else {
             suite.check(false, "Session creation remains a create action")
         }
+        let createdOutcome = ConnActionOutcome(
+            integrationID: codexIntegration,
+            action: .createSession,
+            kind: .accepted,
+            createdSessionID: codexSessionID
+        )
+        suite.check(
+            createdOutcome.createdSessionID == codexSessionID,
+            "accepted creation returns the exact provider-neutral Session identity"
+        )
+        suite.check(
+            ConnActionOutcome(
+                integrationID: codexIntegration,
+                action: .followUp,
+                kind: .accepted,
+                createdSessionID: codexSessionID
+            ).createdSessionID == nil,
+            "non-creation outcomes cannot smuggle a created Session identity"
+        )
 
         let followUp = ConnAction.followUp(
             sessionID: codexSessionID,
@@ -437,6 +456,44 @@ enum Phase2ConnIntegrationTestCases {
             summary: "Approve",
             observedAt: at(3)
         )
+        let normalizedApproval = AttentionRequest(
+            id: .init(rawValue: "mismatched-approval"),
+            sessionID: codexSessionID,
+            kind: .approval,
+            content: .structuredQuestions(
+                questions: [],
+                autoResolutionMilliseconds: nil
+            ),
+            summary: "Malformed approval",
+            observedAt: at(3)
+        )
+        if case let .approval(availableDecisions) = normalizedApproval.content {
+            suite.check(
+                availableDecisions == [ApprovalDecision.approve, .deny],
+                "approval Requests normalize mismatched structured content"
+            )
+        } else {
+            suite.check(false, "approval Requests retain approval content")
+        }
+        let normalizedQuestion = AttentionRequest(
+            id: .init(rawValue: "mismatched-question"),
+            sessionID: codexSessionID,
+            kind: .structuredQuestion,
+            content: .approval(availableDecisions: [.approve]),
+            summary: "Malformed question",
+            observedAt: at(3)
+        )
+        if case let .structuredQuestions(
+            questions,
+            autoResolutionMilliseconds
+        ) = normalizedQuestion.content {
+            suite.check(
+                questions.isEmpty && autoResolutionMilliseconds == nil,
+                "structured-question Requests normalize mismatched approval content"
+            )
+        } else {
+            suite.check(false, "structured-question Requests retain question content")
+        }
         var runProjection = IntegrationProjection()
         suite.check(
             runProjection.qualify(with: .init(

@@ -21,9 +21,10 @@ public final class ConnViewModel: ObservableObject {
     @Published public private(set) var presentation: ConnDomainPresentation?
     @Published public private(set) var selectedSessionID: ConnSessionID?
     @Published public var surfaceState: ShellSurfaceState = .compact
+    @Published public private(set) var isExpandedContentRevealReady = false
     @Published public var showsSettings = false
     @Published public var showsSessionPicker = false
-    @Published public var showsNewSessionComposer = false
+    @Published public private(set) var newSessionDraft = ConnNewSessionDraft()
     @Published public var sessionPickerSearch = ""
     @Published public var sessionPickerWindow: SessionPickerActivityWindow = .default
     @Published public var appearance: ShellAppearance
@@ -40,13 +41,8 @@ public final class ConnViewModel: ObservableObject {
     @Published public var selectedFollowUpModelID: ConnSessionModelID?
     @Published public var selectedFollowUpReasoningEffortID:
         ConnReasoningEffortID?
-    @Published public var newSessionWorkspace = ""
-    @Published public var newSessionPrompt = ""
     @Published public private(set) var sessionModelOptions:
         [ConnSessionModelOption] = []
-    @Published public var selectedNewSessionModelID: ConnSessionModelID?
-    @Published public var selectedNewSessionReasoningEffortID:
-        ConnReasoningEffortID?
     @Published public private(set) var currentSessionModelSelection:
         ConnSessionModelSelection?
     @Published public private(set) var isLoadingSessionModels = false
@@ -70,6 +66,9 @@ public final class ConnViewModel: ObservableObject {
     private var notificationLedger = ConnUserFacingNotificationLedger()
     private var outcomeLedger: ConnOutcomeReviewLedger
     private let outcomeStore: ConnOutcomeReviewPreferenceStore
+    private var surfaceGeometryTransitionGate =
+        ShellSurfaceGeometryTransitionGenerationGate()
+    private var sessionModelLoadGeneration: UInt64 = 0
 
     public init(
         coordinator: ConnIntegrationCoordinator,
@@ -110,13 +109,51 @@ public final class ConnViewModel: ObservableObject {
 
     public var activeCount: Int { presentation?.activeSessionCount ?? 0 }
     public var attentionCount: Int { presentation?.attentionCount ?? 0 }
+    public var presentsExpandedContent: Bool {
+        ShellExpandedContentPresentationPolicy.presentsExpandedContent(
+            surface: surfaceState,
+            isRevealReady: isExpandedContentRevealReady
+        )
+    }
+    public var statusPills: [ConnStatusPillPresentation] {
+        ConnStatusPillPolicy.make(from: pickerResult.rows.map(\.session))
+    }
     public var isExpanded: Bool { surfaceState == .expanded }
     public var compactShelfPreferredHeight: CGFloat {
-        compactNotificationBatch == nil ? 44 : 92
+        guard let compactNotificationBatch else { return 44 }
+        return ConnCompactNotificationLayoutPolicy.headerHeight
+            + ConnCompactNotificationLayoutPolicy.rowHeight(
+                messageTexts: compactNotificationBatch.notifications.map(\.text),
+                placement: panelPlacement
+            )
     }
 
     public var selectedFollowUpModel: ConnSessionModelOption? {
         sessionModelOptions.first { $0.id == selectedFollowUpModelID }
+    }
+
+    public var showsNewSessionComposer: Bool {
+        newSessionDraft.isPresented
+    }
+
+    public var newSessionWorkspace: String {
+        get { newSessionDraft.workspace }
+        set { newSessionDraft.workspace = newValue }
+    }
+
+    public var newSessionPrompt: String {
+        get { newSessionDraft.message }
+        set { newSessionDraft.message = newValue }
+    }
+
+    public var selectedNewSessionModelID: ConnSessionModelID? {
+        get { newSessionDraft.modelID }
+        set { newSessionDraft.modelID = newValue }
+    }
+
+    public var selectedNewSessionReasoningEffortID: ConnReasoningEffortID? {
+        get { newSessionDraft.reasoningEffortID }
+        set { newSessionDraft.reasoningEffortID = newValue }
     }
 
     public var selectedNewSessionModel: ConnSessionModelOption? {
@@ -129,6 +166,37 @@ public final class ConnViewModel: ObservableObject {
 
     public var newSessionReasoningEfforts: [ConnReasoningEffortOption] {
         selectedNewSessionModel?.reasoningEfforts ?? []
+    }
+
+    public var newSessionIntegration: ConnIntegrationPresentation? {
+        guard let integrationID = newSessionDraft.integrationID else {
+            return nil
+        }
+        return integrations.first { $0.id == integrationID }
+    }
+
+    public var newSessionHarness: ConnHarnessAttribution? {
+        guard let descriptor = newSessionIntegration?.state.descriptor else {
+            return nil
+        }
+        return .init(
+            harnessID: descriptor.harnessID,
+            label: descriptor.displayName,
+            assetName: harnessAssets[descriptor.harnessID]
+        )
+    }
+
+    public var canCreateSession: Bool {
+        !isPerformingAction
+            && !newSessionDraft.isAwaitingCreatedSession
+            && !newSessionDraft.requiresDefaultWorkspace
+            && (try? ConnActionText(newSessionPrompt)) != nil
+            && modelSelection(
+                modelID: selectedNewSessionModelID,
+                reasoningEffortID: selectedNewSessionReasoningEffortID
+            ) != nil
+            && newSessionIntegration?.state.freshness == .live
+            && newSessionIntegration?.state.capabilities.supports(.createSession) == true
     }
 
     public var pickerResult: SessionPickerResult {
@@ -164,18 +232,47 @@ public final class ConnViewModel: ObservableObject {
     }
 
     public func setSurfaceState(_ state: ShellSurfaceState) {
+        surfaceGeometryTransitionGate.invalidate()
+        isExpandedContentRevealReady = state == .expanded
         surfaceState = state
         if state == .compact {
             showsSettings = false
             showsSessionPicker = false
-            showsNewSessionComposer = false
+            newSessionDraft.hide()
         }
+    }
+
+    @discardableResult
+    public func beginSurfaceGeometryTransition(
+        to state: ShellSurfaceState
+    ) -> ShellSurfaceGeometryTransitionGeneration {
+        let generation = surfaceGeometryTransitionGate.begin()
+        // Publish the guard before the expanded surface so SwiftUI never
+        // constructs the transcript at each intermediate panel size.
+        isExpandedContentRevealReady = false
+        surfaceState = state
+        if state == .compact {
+            showsSettings = false
+            showsSessionPicker = false
+            newSessionDraft.hide()
+        }
+        return generation
+    }
+
+    public func completeSurfaceGeometryTransition(
+        to state: ShellSurfaceState,
+        generation: ShellSurfaceGeometryTransitionGeneration
+    ) {
+        guard surfaceGeometryTransitionGate.isCurrent(generation),
+              surfaceState == state else { return }
+        isExpandedContentRevealReady = state == .expanded
     }
 
     public func selectSession(_ sessionID: ConnSessionID) {
         guard sessions.contains(where: { $0.id == sessionID }) else { return }
         selectedSessionID = sessionID
         showsSessionPicker = false
+        newSessionDraft.hide()
         selectedFollowUpModelID = nil
         selectedFollowUpReasoningEffortID = nil
         currentSessionModelSelection = nil
@@ -184,19 +281,52 @@ public final class ConnViewModel: ObservableObject {
         loadSessionModels()
     }
 
+    public func beginNewSessionDraft() {
+        guard let integration = integrations.first(where: {
+            $0.state.capabilities.supports(.createSession)
+        }) else {
+            actionError = "A Session-creating Integration is not available"
+            return
+        }
+        newSessionDraft.present(
+            integrationID: integration.id,
+            defaultWorkspace: defaultWorkspace
+        )
+        showsSettings = false
+        showsSessionPicker = false
+        actionError = nil
+        actionNotice = nil
+        loadNewSessionModels()
+    }
+
+    public func hideNewSessionDraft() {
+        newSessionDraft.hide()
+    }
+
+    public func configureDefaultWorkspace() {
+        showsSettings = true
+    }
+
+    public func finishSettings(defaults: UserDefaults = .standard) {
+        persistPreferences(defaults: defaults)
+        newSessionDraft.applyDefaultWorkspaceIfNeeded(defaultWorkspace)
+    }
+
     public func requestRefresh(_ integrationID: IntegrationID) {
         Task { [coordinator] in await coordinator.refresh(integrationID) }
     }
 
     public func openSelectedInHarness() {
-        guard let sessionID = selectedSession?.id else { return }
+        guard let selectedSession else { return }
+        let sessionID = selectedSession.id
+        let harnessName = selectedSession.harness.label
         Task { [weak self, openHarness] in
             let opened = await openHarness(sessionID)
             guard let self else { return }
             if opened {
-                actionNotice = "Opened in Codex"
+                actionNotice = "Opened in \(harnessName)"
             } else {
-                actionError = "Codex could not be opened"
+                actionError = "\(harnessName) could not be opened"
             }
         }
     }
@@ -297,8 +427,10 @@ public final class ConnViewModel: ObservableObject {
                 modelID: selectedNewSessionModelID,
                 reasoningEffortID: selectedNewSessionReasoningEffortID
               ),
+              let integrationID = newSessionDraft.integrationID,
               let integration = presentation?.integrations.first(where: {
-                  $0.state.capabilities.supports(.createSession)
+                  $0.id == integrationID
+                      && $0.state.capabilities.supports(.createSession)
                       && $0.state.freshness == .live
               }) else {
             actionError = "A live Integration, Workspace, and prompt are required"
@@ -310,8 +442,7 @@ public final class ConnViewModel: ObservableObject {
                 workspacePath: workspace,
                 initialPrompt: prompt,
                 modelSelection: modelSelection
-            ),
-            clearNewSessionOnAcceptance: true
+            )
         )
     }
 
@@ -328,63 +459,103 @@ public final class ConnViewModel: ObservableObject {
                 $0.state.capabilities.supports(.createSession)
                     && $0.state.freshness == .live
             })
-        guard !isLoadingSessionModels, let integration else {
-            sessionModelOptions = []
-            selectedNewSessionModelID = nil
-            selectedNewSessionReasoningEffortID = nil
-            selectedFollowUpModelID = nil
-            selectedFollowUpReasoningEffortID = nil
-            currentSessionModelSelection = nil
-            sessionModelError = "Models require a live Integration"
+        guard let integration else {
+            clearSessionModels(
+                message: "Models require a live Integration"
+            )
             return
         }
-        let integrationID = integration.id
+        loadSessionModels(
+            integrationID: integration.id,
+            sessionID: selectedSessionID,
+            forNewSession: false
+        )
+    }
+
+    public func loadNewSessionModels() {
+        guard let integrationID = newSessionDraft.integrationID,
+              integrations.contains(where: {
+                  $0.id == integrationID
+                      && $0.state.capabilities.supports(.createSession)
+                      && $0.state.freshness == .live
+              }) else {
+            clearSessionModels(
+                message: "Models require a live Integration"
+            )
+            return
+        }
+        loadSessionModels(
+            integrationID: integrationID,
+            sessionID: nil,
+            forNewSession: true
+        )
+    }
+
+    private func loadSessionModels(
+        integrationID: IntegrationID,
+        sessionID: ConnSessionID?,
+        forNewSession: Bool
+    ) {
+        sessionModelLoadGeneration &+= 1
+        let generation = sessionModelLoadGeneration
         isLoadingSessionModels = true
         sessionModelError = nil
         Task { [weak self, coordinator] in
             let result = await coordinator.sessionModels(
                 for: integrationID,
-                sessionID: selectedSessionID
+                sessionID: sessionID
             )
-            guard let self else { return }
+            guard let self,
+                  generation == sessionModelLoadGeneration else { return }
             isLoadingSessionModels = false
             guard result.outcome == .available,
                   let catalog = result.catalog,
                   !catalog.options.isEmpty else {
-                sessionModelOptions = []
-                selectedNewSessionModelID = nil
-                selectedNewSessionReasoningEffortID = nil
-                selectedFollowUpModelID = nil
-                selectedFollowUpReasoningEffortID = nil
-                currentSessionModelSelection = nil
-                sessionModelError = result.outcome == .invalidated
-                    ? "The Integration changed while loading models. Retry."
-                    : "Models are unavailable from this Integration."
+                clearSessionModels(
+                    message: result.outcome == .invalidated
+                        ? "The Integration changed while loading models. Retry."
+                        : "Models are unavailable from this Integration."
+                )
                 return
             }
             sessionModelOptions = catalog.options
             currentSessionModelSelection = catalog.currentSelection
             let defaultModelID = catalog.defaultOptionID
-            updateNewSessionModel(
-                catalog.options.contains(where: {
-                    $0.id == selectedNewSessionModelID
-                }) ? selectedNewSessionModelID : defaultModelID
-            )
-            let current = catalog.currentSelection
-                ?? defaultModelID.flatMap { modelID in
-                    catalog.options.first(where: { $0.id == modelID }).flatMap {
-                        $0.defaultReasoningEffortID.map {
-                            ConnSessionModelSelection(
-                                modelID: modelID,
-                                reasoningEffortID: $0
-                            )
+            if forNewSession {
+                updateNewSessionModel(
+                    catalog.options.contains(where: {
+                        $0.id == selectedNewSessionModelID
+                    }) ? selectedNewSessionModelID : defaultModelID
+                )
+            } else {
+                let current = catalog.currentSelection
+                    ?? defaultModelID.flatMap { modelID in
+                        catalog.options.first(where: { $0.id == modelID }).flatMap {
+                            $0.defaultReasoningEffortID.map {
+                                ConnSessionModelSelection(
+                                    modelID: modelID,
+                                    reasoningEffortID: $0
+                                )
+                            }
                         }
                     }
-                }
-            updateFollowUpModel(current?.modelID)
-            selectedFollowUpReasoningEffortID =
-                current?.reasoningEffortID
+                updateFollowUpModel(current?.modelID)
+                selectedFollowUpReasoningEffortID =
+                    current?.reasoningEffortID
+            }
         }
+    }
+
+    private func clearSessionModels(message: String) {
+        sessionModelLoadGeneration &+= 1
+        isLoadingSessionModels = false
+        sessionModelOptions = []
+        selectedNewSessionModelID = nil
+        selectedNewSessionReasoningEffortID = nil
+        selectedFollowUpModelID = nil
+        selectedFollowUpReasoningEffortID = nil
+        currentSessionModelSelection = nil
+        sessionModelError = message
     }
 
     public func updateFollowUpModel(_ modelID: ConnSessionModelID?) {
@@ -462,14 +633,31 @@ public final class ConnViewModel: ObservableObject {
             harnessAssets: harnessAssets
         )
         presentation = value
+        if let createdSessionID = newSessionDraft.reconcile(
+            availableSessionIDs: value.sessions.map(\.id)
+        ) {
+            selectedSessionID = createdSessionID
+            actionNotice = nil
+        }
         if let selectedSessionID,
            !value.sessions.contains(where: { $0.id == selectedSessionID }) {
-            self.selectedSessionID = value.sessions.first?.id
+            if newSessionDraft.pendingSessionID != selectedSessionID {
+                self.selectedSessionID = value.sessions.first?.id
+            }
         } else if selectedSessionID == nil {
             selectedSessionID = value.sessions.first?.id
         }
         if outcomeLedger.reconcile(with: snapshot) {
             _ = outcomeStore.save(outcomeLedger)
+        }
+        if let compactNotificationBatch {
+            let reconciled = ConnUserFacingNotificationPolicy.reconcileFinality(
+                of: compactNotificationBatch,
+                with: value
+            )
+            if reconciled != compactNotificationBatch {
+                self.compactNotificationBatch = reconciled
+            }
         }
         let notifications = notificationLedger.collect(from: value)
         if let batch = ConnUserFacingNotificationPolicy.batch(notifications) {
@@ -501,8 +689,7 @@ public final class ConnViewModel: ObservableObject {
     private func perform(
         _ action: ConnAction,
         clearComposerOnAcceptance: Bool = false,
-        clearQuestionDraft: AttentionRequestID? = nil,
-        clearNewSessionOnAcceptance: Bool = false
+        clearQuestionDraft: AttentionRequestID? = nil
     ) {
         guard !isPerformingAction else { return }
         isPerformingAction = true
@@ -519,16 +706,31 @@ public final class ConnViewModel: ObservableObject {
                 if let clearQuestionDraft {
                     questionDrafts.removeValue(forKey: clearQuestionDraft)
                 }
-                if clearNewSessionOnAcceptance {
-                    newSessionWorkspace = defaultWorkspace
-                    newSessionPrompt = ""
-                    showsNewSessionComposer = false
+                if action.kind == .createSession {
+                    guard let createdSessionID = outcome.createdSessionID else {
+                        actionNotice = nil
+                        actionError = "The Integration accepted creation without returning the new Session identity"
+                        return
+                    }
+                    newSessionDraft.markCreationAccepted(createdSessionID)
+                    selectedSessionID = createdSessionID
+                    actionNotice = "Creating Session…"
+                    if let resolved = newSessionDraft.reconcile(
+                        availableSessionIDs: sessions.map(\.id)
+                    ) {
+                        selectedSessionID = resolved
+                        actionNotice = nil
+                    }
                 }
             case .acknowledgementUncertain:
                 actionError = outcome.evidence
                     ?? "Sent, but acknowledgement is uncertain. Conn will not retry."
             case .rejected:
-                actionError = outcome.evidence ?? "Codex rejected the action"
+                let harnessName = integrations.first {
+                    $0.id == outcome.integrationID
+                }?.state.descriptor.displayName ?? "Harness"
+                actionError = outcome.evidence
+                    ?? "\(harnessName) rejected the action"
             case .invalidated:
                 actionError = outcome.evidence ?? "Connection authority changed"
             case .resolvedElsewhere:

@@ -12,7 +12,6 @@ private enum ConnUITestRunner {
         await V02CandidateRegressionTestCases.run(into: &suite)
 
         if suite.failures.isEmpty {
-            print("V0.2 UI PARITY: \(suite.assertions) of \(suite.assertions) assertions")
             print("PASS: \(suite.assertions) assertions")
             Foundation.exit(EXIT_SUCCESS)
         }

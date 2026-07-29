@@ -32,6 +32,7 @@ public final class GlobalHotKey {
     }
 
     public func register() throws {
+        invalidate()
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)

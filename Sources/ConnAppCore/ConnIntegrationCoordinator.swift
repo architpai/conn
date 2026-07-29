@@ -158,6 +158,8 @@ public actor ConnIntegrationCoordinator {
 
     private var projections: [IntegrationID: IntegrationProjection] = [:]
     private var supervisionTasks: [IntegrationID: Task<Void, Never>] = [:]
+    private var supervisionEpochs: [IntegrationID: UInt64] = [:]
+    private var nextSupervisionEpoch: UInt64 = 0
     private var observers: [UUID: AsyncStream<ConnAggregateSnapshot>.Continuation] = [:]
     private var revision: UInt64 = 0
     private var persistenceHealth: ConnPersistenceHealth
@@ -235,6 +237,7 @@ public actor ConnIntegrationCoordinator {
             task.cancel()
         }
         supervisionTasks.removeAll()
+        supervisionEpochs.removeAll()
         for integration in integrations.values {
             await integration.disconnect()
         }
@@ -246,7 +249,8 @@ public actor ConnIntegrationCoordinator {
 
     public func refresh(_ integrationID: IntegrationID) async {
         guard let integration = integrations[integrationID] else { return }
-        supervisionTasks[integrationID]?.cancel()
+        supervisionTasks.removeValue(forKey: integrationID)?.cancel()
+        supervisionEpochs.removeValue(forKey: integrationID)
         await integration.disconnect()
         projections[integrationID]?.markStale()
         publish()
@@ -308,18 +312,33 @@ public actor ConnIntegrationCoordinator {
 
     private func supervise(_ integrationID: IntegrationID) {
         guard supervisionTasks[integrationID] == nil else { return }
+        nextSupervisionEpoch &+= 1
+        let epoch = nextSupervisionEpoch
+        supervisionEpochs[integrationID] = epoch
         supervisionTasks[integrationID] = Task { [weak self] in
-            await self?.runSupervisionLoop(integrationID)
+            await self?.runSupervisionLoop(integrationID, epoch: epoch)
         }
     }
 
-    private func runSupervisionLoop(_ integrationID: IntegrationID) async {
-        defer { supervisionTasks[integrationID] = nil }
+    private func runSupervisionLoop(
+        _ integrationID: IntegrationID,
+        epoch: UInt64
+    ) async {
+        defer {
+            if supervisionEpochs[integrationID] == epoch {
+                supervisionTasks[integrationID] = nil
+                supervisionEpochs[integrationID] = nil
+            }
+        }
         guard let integration = integrations[integrationID] else { return }
 
-        while started, !Task.isCancelled {
+        while started,
+              supervisionEpochs[integrationID] == epoch,
+              !Task.isCancelled {
             do {
                 let feed = try await integration.establishFeed()
+                guard supervisionEpochs[integrationID] == epoch,
+                      !Task.isCancelled else { break }
                 guard projections[integrationID]?.qualify(
                     with: feed.snapshot,
                     bounds: bounds
@@ -333,7 +352,8 @@ public actor ConnIntegrationCoordinator {
 
                 var requiresRequalification = false
                 for await update in feed.updates {
-                    if Task.isCancelled || !started { break }
+                    if Task.isCancelled || !started
+                        || supervisionEpochs[integrationID] != epoch { break }
                     guard update.integrationID == integrationID,
                           var projection = projections[integrationID] else {
                         requiresRequalification = true
@@ -342,8 +362,10 @@ public actor ConnIntegrationCoordinator {
                     let result = projection.apply(update, bounds: bounds)
                     projections[integrationID] = projection
                     switch result {
-                    case .applied, .ignoredMissingEntity:
+                    case .applied:
                         publishAndPersist()
+                    case .ignoredMissingEntity:
+                        publish()
                     case .ignoredDuplicate, .ignoredStaleGeneration:
                         break
                     case .restored, .qualified:
@@ -357,7 +379,8 @@ public actor ConnIntegrationCoordinator {
                 // Qualification failure is isolated to this Integration.
             }
 
-            if Task.isCancelled || !started { break }
+            if Task.isCancelled || !started
+                || supervisionEpochs[integrationID] != epoch { break }
             projections[integrationID]?.markStale()
             publish()
             try? await Task.sleep(for: retryDelay)

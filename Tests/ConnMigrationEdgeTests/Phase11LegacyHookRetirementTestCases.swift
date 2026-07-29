@@ -35,7 +35,11 @@ enum Phase11LegacyHookRetirementTestCases {
                 suite.check(false, "nested legacy symlink returned \(error)")
                 return
             }
-            suite.check(FileManager.default.fileExists(atPath: bridge.path), "all roots survive failed preflight")
+            suite.check(
+                FileManager.default.fileExists(atPath: bridge.path)
+                    && FileManager.default.fileExists(atPath: domain.path),
+                "all roots survive failed preflight"
+            )
             suite.check(FileManager.default.fileExists(atPath: outside.path), "nested symlink destination is untouched")
         }
     }

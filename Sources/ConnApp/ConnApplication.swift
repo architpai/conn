@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import Darwin
 import Foundation
 import ConnAppCore
@@ -100,10 +101,12 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
                 integrations: [codex],
                 checkpointStore: store
             )
-            let codexHarnessAsset = Self.registerCodexHarnessAsset()
+            let codexHarnessAssets = Self.registerCodexHarnessAsset().map {
+                [CodexIntegrationIdentity.harnessID: $0]
+            } ?? [:]
             let viewModel = ConnViewModel(
                 coordinator: coordinator,
-                harnessAssets: [CodexIntegrationIdentity.harnessID: codexHarnessAsset],
+                harnessAssets: codexHarnessAssets,
                 openHarness: Self.openCodex
             )
             let settingsModel = CodexIntegrationSettingsModel(integration: codex)
@@ -237,14 +240,60 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private static func registerCodexHarnessAsset() -> String {
+    private static func registerCodexHarnessAsset() -> String? {
         let assetName = NSImage.Name("CodexHarness")
-        if let applicationURL = NSWorkspace.shared.urlForApplication(
+        guard let applicationURL = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: "com.openai.codex"
-        ) {
-            let image = NSWorkspace.shared.icon(forFile: applicationURL.path)
-            image.setName(assetName)
+        ) else { return nil }
+        let image = highResolutionOpenAIMark(applicationURL: applicationURL)
+            ?? NSWorkspace.shared.icon(forFile: applicationURL.path)
+        return image.setName(assetName) ? assetName : nil
+    }
+
+    private static func highResolutionOpenAIMark(
+        applicationURL: URL
+    ) -> NSImage? {
+        let iconURL = applicationURL
+            .appendingPathComponent("Contents/Resources/icon-chatgpt.png")
+        guard let source = CIImage(contentsOf: iconURL) else { return nil }
+
+        // The supplied application icon contains the OpenAI mark on a light
+        // rounded-square plate. Crop inside that plate, then map luminance to
+        // alpha so the dark mark becomes a high-resolution template image.
+        let side = min(source.extent.width, source.extent.height) * 0.68
+        let crop = CGRect(
+            x: source.extent.midX - side / 2,
+            y: source.extent.midY - side / 2,
+            width: side,
+            height: side
+        )
+        let cropped = source.cropped(to: crop)
+        guard let mask = CIFilter(
+            name: "CIColorMatrix",
+            parameters: [
+                kCIInputImageKey: cropped,
+                "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputAVector": CIVector(
+                    x: -1.0 / 3.0,
+                    y: -1.0 / 3.0,
+                    z: -1.0 / 3.0,
+                    w: 0
+                ),
+                "inputBiasVector": CIVector(x: 1, y: 1, z: 1, w: 1),
+            ]
+        )?.outputImage,
+        let rendered = CIContext().createCGImage(mask, from: crop)
+        else {
+            return nil
         }
-        return assetName
+
+        let image = NSImage(
+            cgImage: rendered,
+            size: NSSize(width: side, height: side)
+        )
+        image.isTemplate = true
+        return image
     }
 }

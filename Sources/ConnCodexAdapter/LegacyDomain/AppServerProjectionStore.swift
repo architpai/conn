@@ -89,6 +89,7 @@ public actor AppServerProjectionStore {
 
     public let configuration: AppServerProjectionConfiguration
     private var state = State()
+    private var aggregatePresentationBytes = 0
 
     public init(configuration: AppServerProjectionConfiguration = .init()) {
         self.configuration = configuration
@@ -118,6 +119,7 @@ public actor AppServerProjectionStore {
         persist: @Sendable (AppServerProjectionCheckpoint) throws -> Void
     ) rethrows -> AppServerProjectionApplyResult {
         let previous = state
+        let previousPresentationBytes = aggregatePresentationBytes
         let result = apply(input)
         guard result == .applied || result == .appliedPendingSnapshot else {
             return result
@@ -127,6 +129,7 @@ public actor AppServerProjectionStore {
             return result
         } catch {
             state = previous
+            aggregatePresentationBytes = previousPresentationBytes
             throw error
         }
     }
@@ -235,6 +238,7 @@ public actor AppServerProjectionStore {
             )
         }
         state = restored
+        aggregatePresentationBytes = currentAggregatePresentationBytes()
     }
 
     public func storageMetrics() -> AppServerProjectionStorageMetrics {
@@ -244,13 +248,7 @@ public actor AppServerProjectionStore {
             itemCount: state.threads.values.reduce(0) { total, thread in
                 total + thread.turns.values.reduce(0) { $0 + $1.items.count }
             },
-            presentationByteCount: state.threads.values.reduce(0) { threadTotal, thread in
-                threadTotal + thread.turns.values.reduce(0) { turnTotal, turn in
-                    turnTotal + planByteCount(turn.plan) + turn.items.values.reduce(0) {
-                        $0 + presentationByteCount($1.value.presentation)
-                    }
-                }
-            },
+            presentationByteCount: aggregatePresentationBytes,
             unresolvedRequestCount: state.threads.values.reduce(0) { $0 + $1.requests.count },
             threadTombstoneCount: state.threadTombstones.count,
             resolvedRequestTombstoneCount: state.resolvedRequestTombstones.count,
@@ -316,6 +314,7 @@ public actor AppServerProjectionStore {
             }
             state.threads[id] = thread
         }
+        aggregatePresentationBytes = currentAggregatePresentationBytes()
         return .applied
     }
 
@@ -576,6 +575,10 @@ public actor AppServerProjectionStore {
         }
         let sequence = input.cursor.sequence
         let result: AppServerProjectionApplyResult
+        let presentationThreadID = presentationBearingThreadID(input.delta)
+        let previousPresentationBytes = presentationThreadID
+            .flatMap { state.threads[$0] }
+            .map(presentationByteCount(in:)) ?? 0
 
         switch input.delta {
         case let .threadUpsert(unboundedThread):
@@ -664,6 +667,16 @@ public actor AppServerProjectionStore {
         }
 
         if result == .applied {
+            if let presentationThreadID {
+                let currentBytes = state.threads[presentationThreadID]
+                    .map(presentationByteCount(in:)) ?? 0
+                aggregatePresentationBytes = max(
+                    0,
+                    aggregatePresentationBytes
+                        - previousPresentationBytes
+                        + currentBytes
+                )
+            }
             trimAfterAppliedDelta(input.delta)
         }
         return result
@@ -1542,7 +1555,7 @@ public actor AppServerProjectionStore {
             if flags.contains(.waitingOnApproval) { return .waitingForApproval }
         }
         if let activeTurn = turns.first(where: { $0.status == .inProgress }) {
-            guard let item = activeTurn.items.first else { return .working }
+            guard let item = activeTurn.items.last else { return .working }
             switch item.kind {
             case .commandExecution: return .runningCommand
             case .fileChange: return .changingFiles
@@ -1624,11 +1637,12 @@ public actor AppServerProjectionStore {
     }
 
     private func trimState() {
+        aggregatePresentationBytes = currentAggregatePresentationBytes()
         trimThreadsIfNeeded()
         trimUnresolvedRequestsIfNeeded()
         trimRequestTombstones()
         trimThreadTombstones()
-        trimPresentationPayloads()
+        trimPresentationPayloadsIfNeeded()
     }
 
     /// Delta retention work is scoped to bounds the delta can grow. Common
@@ -1641,7 +1655,7 @@ public actor AppServerProjectionStore {
             if thread.turns.contains(where: { turn in
                 turn.items.contains(where: { $0.presentation != nil })
             }) {
-                trimPresentationPayloads()
+                trimPresentationPayloadsIfNeeded()
             }
         case .threadStatus:
             trimThreadsIfNeeded()
@@ -1650,21 +1664,21 @@ public actor AppServerProjectionStore {
         case let .turnUpsert(_, turn):
             trimThreadsIfNeeded()
             if turn.items.contains(where: { $0.presentation != nil }) {
-                trimPresentationPayloads()
+                trimPresentationPayloadsIfNeeded()
             }
         case let .itemUpsert(_, _, item):
             trimThreadsIfNeeded()
             if item.presentation != nil {
-                trimPresentationPayloads()
+                trimPresentationPayloadsIfNeeded()
             }
         case .itemPresentationDelta:
             trimThreadsIfNeeded()
-            trimPresentationPayloads()
+            trimPresentationPayloadsIfNeeded()
         case .threadTokenUsage:
             trimThreadsIfNeeded()
         case .turnPlanUpdated:
             trimThreadsIfNeeded()
-            trimPresentationPayloads()
+            trimPresentationPayloadsIfNeeded()
         case .requestOpened:
             trimThreadsIfNeeded()
             trimUnresolvedRequestsIfNeeded()
@@ -1677,8 +1691,23 @@ public actor AppServerProjectionStore {
                 .sorted(by: storedThreadComesFirst)
                 .prefix(configuration.maximumThreads)
                 .map(\.id))
+            let removedBytes = state.threads.reduce(0) { total, entry in
+                keep.contains(entry.key)
+                    ? total
+                    : total + presentationByteCount(in: entry.value)
+            }
             state.threads = state.threads.filter { keep.contains($0.key) }
+            aggregatePresentationBytes = max(
+                0,
+                aggregatePresentationBytes - removedBytes
+            )
         }
+    }
+
+    private func trimPresentationPayloadsIfNeeded() {
+        guard let maximumBytes = configuration.maximumAggregatePresentationBytes,
+              aggregatePresentationBytes > maximumBytes else { return }
+        trimPresentationPayloads()
     }
 
     private func trimUnresolvedRequestsIfNeeded() {
@@ -1810,6 +1839,36 @@ public actor AppServerProjectionStore {
                 thread.turns[turnID]?.plan = nil
             }
             state.threads[threadID] = thread
+        }
+        aggregatePresentationBytes = currentAggregatePresentationBytes()
+    }
+
+    private func presentationBearingThreadID(
+        _ delta: AppServerProjectionDelta
+    ) -> AppServerThreadID? {
+        switch delta {
+        case let .threadUpsert(thread): thread.id
+        case let .threadRemoved(threadID): threadID
+        case let .turnUpsert(threadID, _),
+             let .itemUpsert(threadID, _, _),
+             let .itemPresentationDelta(threadID, _, _, _),
+             let .turnPlanUpdated(threadID, _, _): threadID
+        case .threadStatus, .threadTokenUsage, .requestOpened, .requestResolved:
+            nil
+        }
+    }
+
+    private func currentAggregatePresentationBytes() -> Int {
+        state.threads.values.reduce(0) {
+            $0 + presentationByteCount(in: $1)
+        }
+    }
+
+    private func presentationByteCount(in thread: StoredThread) -> Int {
+        thread.turns.values.reduce(0) { turnTotal, turn in
+            turnTotal + planByteCount(turn.plan) + turn.items.values.reduce(0) {
+                $0 + presentationByteCount($1.value.presentation)
+            }
         }
     }
 

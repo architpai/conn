@@ -220,28 +220,50 @@ public struct LegacyHookRetirementStore: Sendable {
             Self.privateFileMode
         )
         if descriptor < 0 {
-            if errno == EEXIST, try validateMarkerIfPresent(marker) { return }
+            let openErrno = errno
+            if openErrno == EEXIST, try validateMarkerIfPresent(marker) { return }
             throw LegacyHookRetirementError.fileSystem(
                 operation: "create-retirement-marker",
-                code: errno
+                code: openErrno
             )
         }
         let bytes = Array("legacy hook checkpoints discarded\n".utf8)
-        let written = bytes.withUnsafeBytes { buffer in
-            Darwin.write(descriptor, buffer.baseAddress, buffer.count)
+        var offset = 0
+        var writeError: Int32?
+        while offset < bytes.count {
+            let written = bytes.withUnsafeBytes { buffer in
+                Darwin.write(
+                    descriptor,
+                    buffer.baseAddress?.advanced(by: offset),
+                    buffer.count - offset
+                )
+            }
+            if written < 0 {
+                if errno == EINTR { continue }
+                writeError = errno
+                break
+            }
+            guard written > 0 else {
+                writeError = EIO
+                break
+            }
+            offset += written
         }
-        let savedErrno = errno
-        let closeResult = close(descriptor)
-        guard written == bytes.count else {
+        if let writeError {
+            _ = close(descriptor)
+            _ = unlink(marker.path)
             throw LegacyHookRetirementError.fileSystem(
                 operation: "write-retirement-marker",
-                code: savedErrno
+                code: writeError
             )
         }
+        let closeResult = close(descriptor)
         guard closeResult == 0 else {
+            let closeErrno = errno
+            _ = unlink(marker.path)
             throw LegacyHookRetirementError.fileSystem(
                 operation: "close-retirement-marker",
-                code: errno
+                code: closeErrno
             )
         }
     }

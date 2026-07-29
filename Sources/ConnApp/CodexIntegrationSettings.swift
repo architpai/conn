@@ -1,4 +1,5 @@
 import SwiftUI
+import ConnAppCore
 import ConnCodexAdapter
 
 @MainActor
@@ -16,16 +17,25 @@ final class CodexIntegrationSettingsModel: ObservableObject {
     @Published private(set) var legacyPluginCandidate:
         LegacySidequestPluginCandidate?
     @Published private(set) var legacyPluginResult: String?
+    @Published private(set) var launchAtLoginStatus: ConnLaunchAtLoginStatus
+    @Published private(set) var launchAtLoginIssue: String?
+    @Published var showsSharedDesktopSetupConsent = false
 
     private static let labsKey = "sharedDesktopLabs.v1"
     private static let setupKey = "sharedDesktopAppManaged.v1"
     private let diagnosticsCoordinator = SharedDesktopDiagnosticsCoordinator()
     private let setupCoordinator = SharedDesktopSetupCoordinator()
     private let integration: CodexIntegration
+    private let launchAtLogin: ConnLaunchAtLoginController
     private var task: Task<Void, Never>?
 
-    init(integration: CodexIntegration) {
+    init(
+        integration: CodexIntegration,
+        launchAtLogin: ConnLaunchAtLoginController = .init()
+    ) {
         self.integration = integration
+        self.launchAtLogin = launchAtLogin
+        launchAtLoginStatus = launchAtLogin.status
         labsEnabled = UserDefaults.standard.bool(forKey: Self.labsKey)
     }
 
@@ -34,49 +44,103 @@ final class CodexIntegrationSettingsModel: ObservableObject {
     }
 
     func refresh() {
-        task?.cancel()
-        task = Task { [weak self] in
-            guard let self else { return }
-            isWorking = true
-            let snapshot = await diagnosticsCoordinator.diagnose(
-                isLabsFeatureEnabled: labsEnabled,
-                isAppManagedSetupEnabled: setupEnabled
-            )
-            guard !Task.isCancelled else { return }
-            diagnostics = snapshot
-            lastDiagnosedAt = Date()
-            legacyPluginCandidate = await integration.legacyPluginCandidate()
-            isWorking = false
+        run { model in
+            await model.refreshInline()
         }
     }
 
-    func setUp() {
-        task?.cancel()
-        task = Task { [weak self] in
-            guard let self else { return }
-            isWorking = true
-            let result = await setupCoordinator.setUp()
-            setupResult = result
+    var launchAtLoginIsOn: Bool {
+        ConnLaunchAtLoginPolicy.isOn(launchAtLoginStatus)
+    }
+
+    var launchAtLoginDetail: String {
+        ConnLaunchAtLoginPolicy.detail(launchAtLoginStatus)
+    }
+
+    var canChangeLaunchAtLogin: Bool {
+        ConnLaunchAtLoginPolicy.canChange(launchAtLoginStatus)
+    }
+
+    var sharedDesktopConsentMessage: String {
+        if launchAtLoginStatus == .unavailable {
+            return "This copy of Conn cannot register as a macOS login item. You can still set up Shared Desktop Labs without changing login behavior."
+        }
+        return "Launching Conn at login helps restore the managed App Server before you open ChatGPT/Codex Desktop. macOS does not guarantee ordering between separate login items."
+    }
+
+    func refreshLaunchAtLogin() {
+        launchAtLoginStatus = launchAtLogin.status
+        if launchAtLoginStatus == .enabled {
+            launchAtLoginIssue = nil
+        }
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        launchAtLoginIssue = nil
+        switch launchAtLogin.setEnabled(enabled) {
+        case let .success(status):
+            launchAtLoginStatus = status
+            if enabled, status == .requiresApproval {
+                launchAtLoginIssue =
+                    "macOS requires approval in System Settings before Conn can launch at login."
+            } else if enabled, status != .enabled {
+                launchAtLoginIssue =
+                    "Conn could not confirm that launch at login is enabled."
+            }
+        case let .failure(error):
+            launchAtLoginStatus = launchAtLogin.status
+            launchAtLoginIssue = String(
+                "Launch at login could not be changed: \(error.localizedDescription)"
+                    .prefix(320)
+            )
+        }
+    }
+
+    func requestSetUp() {
+        refreshLaunchAtLogin()
+        if launchAtLoginStatus == .enabled {
+            performSetUp()
+        } else {
+            showsSharedDesktopSetupConsent = true
+        }
+    }
+
+    func confirmSetUp(enableLaunchAtLogin: Bool) {
+        showsSharedDesktopSetupConsent = false
+        if enableLaunchAtLogin {
+            setLaunchAtLogin(true)
+            guard ConnLaunchAtLoginPolicy.isConfirmedEnabled(
+                launchAtLoginStatus
+            ) else { return }
+        }
+        performSetUp()
+    }
+
+    func cancelSetUpConsent() {
+        showsSharedDesktopSetupConsent = false
+    }
+
+    private func performSetUp() {
+        run { model in
+            let result = await model.setupCoordinator.setUp()
+            guard !Task.isCancelled else { return }
+            model.setupResult = result
             if result.outcome == .ready || result.outcome == .relaunchRequired {
                 UserDefaults.standard.set(true, forKey: Self.setupKey)
             }
-            isWorking = false
-            refresh()
+            await model.refreshInline()
         }
     }
 
     func turnOff() {
-        task?.cancel()
-        task = Task { [weak self] in
-            guard let self else { return }
-            isWorking = true
-            let result = await setupCoordinator.turnOff()
-            setupResult = result
+        run { model in
+            let result = await model.setupCoordinator.turnOff()
+            guard !Task.isCancelled else { return }
+            model.setupResult = result
             if result.outcome == .disabled {
                 UserDefaults.standard.set(false, forKey: Self.setupKey)
             }
-            isWorking = false
-            refresh()
+            await model.refreshInline()
         }
     }
 
@@ -86,14 +150,12 @@ final class CodexIntegrationSettingsModel: ObservableObject {
 
     func uninstallLegacyPlugin() {
         guard let candidate = legacyPluginCandidate else { return }
-        task?.cancel()
-        task = Task { [weak self] in
-            guard let self else { return }
-            isWorking = true
-            let outcome = await integration.uninstallLegacyPlugin(
+        run { model in
+            let outcome = await model.integration.uninstallLegacyPlugin(
                 confirmed: candidate
             )
-            legacyPluginResult = switch outcome {
+            guard !Task.isCancelled else { return }
+            model.legacyPluginResult = switch outcome {
             case .removed: "The retired Sidequest plugin was removed and verified."
             case .stillInstalled: "Codex still reports the retired plugin as installed."
             case .staleConfirmation: "The connection changed. Refresh before confirming again."
@@ -102,9 +164,36 @@ final class CodexIntegrationSettingsModel: ObservableObject {
                 "Codex may have accepted the uninstall; verify manually before retrying."
             case .unsupported: "This Codex version does not support verified removal."
             }
-            legacyPluginCandidate = nil
-            isWorking = false
+            if outcome == .removed || outcome == .alreadyAttempted {
+                model.legacyPluginCandidate = nil
+            }
+            await model.refreshInline()
         }
+    }
+
+    private func run(
+        _ operation: @escaping @MainActor (CodexIntegrationSettingsModel) async -> Void
+    ) {
+        task?.cancel()
+        task = Task { [weak self] in
+            guard let self else { return }
+            isWorking = true
+            defer { isWorking = false }
+            await operation(self)
+        }
+    }
+
+    private func refreshInline() async {
+        let snapshot = await diagnosticsCoordinator.diagnose(
+            isLabsFeatureEnabled: labsEnabled,
+            isAppManagedSetupEnabled: setupEnabled
+        )
+        guard !Task.isCancelled else { return }
+        let candidate = await integration.legacyPluginCandidate()
+        guard !Task.isCancelled else { return }
+        diagnostics = snapshot
+        lastDiagnosedAt = Date()
+        legacyPluginCandidate = candidate
     }
 }
 
@@ -113,6 +202,28 @@ struct CodexIntegrationSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Conn startup")
+                    .font(.system(size: 11, weight: .semibold))
+                Toggle(
+                    "Launch Conn at login",
+                    isOn: Binding(
+                        get: { model.launchAtLoginIsOn },
+                        set: { model.setLaunchAtLogin($0) }
+                    )
+                )
+                .disabled(!model.canChangeLaunchAtLogin)
+                Text(model.launchAtLoginIssue ?? model.launchAtLoginDetail)
+                    .font(.system(size: 9))
+                    .foregroundStyle(
+                        model.launchAtLoginIssue == nil
+                            ? Color.secondary
+                            : Color.orange
+                    )
+            }
+
+            Divider()
+
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Codex")
@@ -165,7 +276,7 @@ struct CodexIntegrationSettingsView: View {
                     ) {
                         model.refresh()
                     }
-                    Button("Set up") { model.setUp() }
+                    Button("Set up") { model.requestSetUp() }
                     Button("Turn off") { model.turnOff() }
                 }
                 .disabled(model.isWorking)
@@ -215,6 +326,26 @@ struct CodexIntegrationSettingsView: View {
             )
             .font(.system(size: 9))
             .foregroundStyle(.tertiary)
+        }
+        .onAppear {
+            model.refreshLaunchAtLogin()
+        }
+        .alert(
+            "Prepare Shared Desktop Labs",
+            isPresented: $model.showsSharedDesktopSetupConsent
+        ) {
+            Button("Set Up and Launch at Login") {
+                model.confirmSetUp(enableLaunchAtLogin: true)
+            }
+            .disabled(!model.canChangeLaunchAtLogin)
+            Button("Set Up Only") {
+                model.confirmSetUp(enableLaunchAtLogin: false)
+            }
+            Button("Cancel", role: .cancel) {
+                model.cancelSetUpConsent()
+            }
+        } message: {
+            Text(model.sharedDesktopConsentMessage)
         }
     }
 }

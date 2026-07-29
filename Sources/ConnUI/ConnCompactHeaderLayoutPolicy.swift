@@ -45,3 +45,65 @@ package enum ConnCompactHeaderLayoutPolicy {
         compactPanelWidth(placement: placement) - panelHorizontalInset
     }
 }
+
+package enum ConnCompactNotificationIndicator: Equatable, Sendable {
+    case animatedWaveform
+    case completion
+}
+
+package enum ConnCompactNotificationLayoutPolicy {
+    package static let usesStackedMessageHierarchy = true
+    package static let messageLineLimit: Int? = 2
+    package static let headerHeight: CGFloat = 40
+
+    package static func contentWidth(
+        placement: ShellPanelPlacement
+    ) -> CGFloat {
+        ConnCompactHeaderLayoutPolicy.compactContentWidth(
+            placement: placement
+        )
+    }
+
+    package static func indicator(
+        isFinal: Bool
+    ) -> ConnCompactNotificationIndicator {
+        isFinal ? .completion : .animatedWaveform
+    }
+
+    package static func rowHeight(
+        messageTexts: [String],
+        placement: ShellPanelPlacement
+    ) -> CGFloat {
+        let availableTextWidth = max(
+            120,
+            contentWidth(placement: placement) - 79
+        )
+        let approximateCharactersPerLine = max(
+            20,
+            Int((availableTextWidth / 5.4).rounded(.down))
+        )
+        let contentHeight = messageTexts.reduce(CGFloat.zero) {
+            partialHeight,
+            text in
+            let measuredVisualLines = text.split(
+                separator: "\n",
+                omittingEmptySubsequences: false
+            ).reduce(0) { count, paragraph in
+                count + max(
+                    1,
+                    Int(ceil(
+                        Double(paragraph.count)
+                            / Double(approximateCharactersPerLine)
+                    ))
+                )
+            }
+            let visualLines = min(
+                measuredVisualLines,
+                messageLineLimit ?? measuredVisualLines
+            )
+            return partialHeight + 12 + 3 + CGFloat(visualLines) * 13
+        }
+        let interMessageSpacing = CGFloat(max(0, messageTexts.count - 1)) * 8
+        return max(52, contentHeight + interMessageSpacing + 14)
+    }
+}

@@ -13,6 +13,8 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var runExpansion: [ConnRunExpansionKey: Bool] = [:]
     @State private var showsFollowUpModelPopover = false
+    @State private var showsNewSessionModelPopover = false
+    @FocusState private var newSessionPromptIsFocused: Bool
     private let integrationSettingsContent: () -> IntegrationSettingsContent
 
     public init(
@@ -27,9 +29,14 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
     public var body: some View {
         ZStack(alignment: .top) {
             if model.surfaceState == .expanded {
-                chrome
-                expandedContent
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.985)))
+                if model.presentsExpandedContent {
+                    chrome
+                    expandedContent
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.985)))
+                } else {
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             } else {
                 compactSurface
             }
@@ -44,6 +51,10 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
         .animation(
             reduceMotion ? .easeOut(duration: 0.12) : .spring(duration: 0.3, bounce: 0.08),
             value: model.surfaceState
+        )
+        .animation(
+            .easeOut(duration: reduceMotion ? 0.12 : 0.18),
+            value: model.presentsExpandedContent
         )
         .animation(.easeOut(duration: 0.16), value: model.compactNotificationBatch?.id)
     }
@@ -138,16 +149,30 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
 
                 Spacer(minLength: presentation.minimumCenterGap)
 
-                if model.activeCount > 0 {
-                    metric("\(model.activeCount)", label: "active Sessions", color: .mint)
-                }
-                if model.attentionCount > 0 {
-                    metric("\(model.attentionCount)", label: "Attention Requests", color: .orange)
+                ForEach(ShellStatusPillLayoutPolicy.orderedVisiblePills(
+                    model.statusPills,
+                    surface: model.surfaceState,
+                    placement: model.panelPlacement
+                )) { pill in
+                    Button {
+                        model.selectSession(pill.primarySessionID)
+                        if !model.isExpanded {
+                            model.onToggleExpansion?()
+                        }
+                    } label: {
+                        metric(
+                            "\(pill.count)",
+                            label: "\(pill.label) Sessions",
+                            color: toneColor(pill.tone)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help(pill.label)
                 }
 
                 if model.isExpanded {
                     Button {
-                        model.showsNewSessionComposer.toggle()
+                        model.beginNewSessionDraft()
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -186,8 +211,6 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
         .overlay {
             if model.showsSettings {
                 settings
-            } else if model.showsNewSessionComposer {
-                newSessionComposer
             }
         }
         .onAppear {
@@ -258,6 +281,7 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 model.selectedSessionID == session.id
+                    && !model.showsNewSessionComposer
                     ? Color.accentColor.opacity(0.16)
                     : Color.white.opacity(0.025),
                 in: RoundedRectangle(cornerRadius: 10)
@@ -271,7 +295,9 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
 
     @ViewBuilder
     private var detail: some View {
-        if let session = model.selectedSession {
+        if model.showsNewSessionComposer {
+            newSessionDetail
+        } else if let session = model.selectedSession {
             VStack(spacing: 0) {
                 sessionHeader(session)
                 Divider().opacity(0.35)
@@ -282,7 +308,7 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                                 attentionCard(attention)
                             }
                         }
-                        if session.activities.isEmpty {
+                        if session.activities.isEmpty && session.attention.isEmpty {
                             ContentUnavailableView(
                                 "No Activity Yet",
                                 systemImage: "waveform.path",
@@ -396,7 +422,7 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             Spacer(minLength: 88)
             Text(message)
                 .font(.system(size: 12))
-                .multilineTextAlignment(.trailing)
+                .multilineTextAlignment(.leading)
                 .lineLimit(4)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 9)
@@ -443,6 +469,10 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             for: item.activity.kind
         )
         let isUser = lane == .trailing
+        let contentLane = ConnTranscriptAlignmentPolicy.contentLane(
+            for: item.activity.kind
+        )
+        let usesLeadingContent = contentLane == .leading
         let style = ConnTranscriptPresentationPolicy.style(
             for: item.activity.kind
         )
@@ -456,7 +486,7 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                     activityIcon(item)
                 }
                 VStack(
-                    alignment: isUser ? .trailing : .leading,
+                    alignment: usesLeadingContent ? .leading : .trailing,
                     spacing: 4
                 ) {
                     Text(item.label)
@@ -466,7 +496,7 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                         Text(detail)
                             .font(.system(size: 12))
                             .multilineTextAlignment(
-                                isUser ? .trailing : .leading
+                                usesLeadingContent ? .leading : .trailing
                             )
                             .textSelection(.enabled)
                     }
@@ -762,90 +792,229 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                 }
             }
             .formStyle(.grouped)
-            .onDisappear { model.persistPreferences() }
+            .onDisappear { model.finishSettings() }
         }
     }
 
-    private var newSessionComposer: some View {
-        modalCard(
-            title: "New Session",
-            dismiss: { model.showsNewSessionComposer = false }
-        ) {
-            VStack(alignment: .leading, spacing: 12) {
-                TextField("Workspace path", text: $model.newSessionWorkspace)
-                    .textFieldStyle(.roundedBorder)
-                HStack {
-                    if model.sessionModelOptions.isEmpty {
-                        Button {
-                            model.loadSessionModels()
-                        } label: {
-                            if model.isLoadingSessionModels {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Label("Retry models", systemImage: "arrow.clockwise")
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(model.isLoadingSessionModels)
-                    } else {
-                        Picker("Model", selection: Binding(
-                            get: { model.selectedNewSessionModelID },
-                            set: { model.updateNewSessionModel($0) }
-                        )) {
-                            ForEach(model.sessionModelOptions) { option in
-                                Text(option.displayName).tag(Optional(option.id))
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .accessibilityLabel("Model for new Session")
-                        .help(
-                            model.sessionModelOptions.first(where: {
-                                $0.id == model.selectedNewSessionModelID
-                            })?.detail ?? "Model for the first message"
+    private var newSessionDetail: some View {
+        VStack(spacing: 0) {
+            newSessionHeader
+            Divider().opacity(0.35)
+            Group {
+                if model.newSessionDraft.requiresDefaultWorkspace {
+                    VStack(spacing: 14) {
+                        ContentUnavailableView(
+                            "Choose a Default Workspace",
+                            systemImage: "folder.badge.questionmark",
+                            description: Text(
+                                "Conn needs a Workspace before it can start a Harness Session. You only need to configure this once."
+                            )
                         )
-                        Picker(
-                            "Reasoning",
-                            selection: $model.selectedNewSessionReasoningEffortID
-                        ) {
-                            ForEach(model.newSessionReasoningEfforts) { effort in
-                                Text(effort.displayName).tag(Optional(effort.id))
-                            }
+                        Button("Choose in Settings") {
+                            newSessionPromptIsFocused = false
+                            model.configureDefaultWorkspace()
                         }
-                        .pickerStyle(.menu)
-                        .accessibilityLabel("Reasoning for new Session")
+                        .buttonStyle(.borderedProminent)
                     }
-                    Spacer()
-                }
-                if let modelError = model.sessionModelError {
-                    Text(modelError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-                TextEditor(text: $model.newSessionPrompt)
-                    .font(.system(size: 12))
-                    .frame(minHeight: 120)
-                    .padding(6)
-                    .background(.black.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-                HStack {
-                    Spacer()
-                    Button("Create Session") {
-                        model.createSession()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(28)
+                } else if model.newSessionDraft.isAwaitingCreatedSession {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Creating Session…")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Waiting for the Harness Session to appear in Conn.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(
-                        model.isPerformingAction
-                            || model.selectedNewSessionModelID == nil
-                            || model.selectedNewSessionReasoningEffortID == nil
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ContentUnavailableView(
+                        "Start a New Session",
+                        systemImage: "bubble.left.and.bubble.right",
+                        description: Text(
+                            "Write your first message below. Conn creates the Harness Session only when you send it."
+                        )
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(28)
                 }
             }
+            Divider().opacity(0.35)
+            newSessionComposer
         }
         .onAppear {
-            if model.newSessionWorkspace.isEmpty {
-                model.newSessionWorkspace = model.defaultWorkspace
+            if !model.newSessionDraft.requiresDefaultWorkspace {
+                Task { @MainActor in
+                    newSessionPromptIsFocused = true
+                }
             }
-            model.loadSessionModels()
         }
+    }
+
+    private var newSessionHeader: some View {
+        HStack(spacing: 10) {
+            if let harness = model.newSessionHarness {
+                harnessBadge(harness)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("New Session")
+                    .font(.system(size: 15, weight: .bold))
+                Text(
+                    model.newSessionDraft.requiresDefaultWorkspace
+                        ? "Default Workspace required"
+                        : model.newSessionWorkspace
+                )
+                .font(.system(size: 11))
+                .foregroundStyle(
+                    model.newSessionDraft.requiresDefaultWorkspace
+                        ? Color.orange
+                        : Color.secondary
+                )
+                .lineLimit(1)
+                .truncationMode(.middle)
+            }
+            Spacer()
+            if let integration = model.newSessionIntegration {
+                Text(integration.state.descriptor.displayName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(toneColor(integration.tone))
+            }
+            Button {
+                model.hideNewSessionDraft()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .disabled(model.newSessionDraft.isAwaitingCreatedSession)
+            .accessibilityLabel("Close new Session draft")
+        }
+        .padding(14)
+    }
+
+    private var newSessionComposer: some View {
+        VStack(spacing: 7) {
+            if let error = model.actionError {
+                Text(error)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let modelError = model.sessionModelError {
+                HStack(spacing: 8) {
+                    Text(modelError)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.red)
+                    Button("Retry") { model.loadNewSessionModels() }
+                        .buttonStyle(.link)
+                        .disabled(model.isLoadingSessionModels)
+                    Spacer()
+                }
+            }
+            HStack(spacing: 8) {
+                newSessionModelControl
+                TextField(
+                    "Message your Harness…",
+                    text: $model.newSessionPrompt,
+                    axis: .vertical
+                )
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(1...5)
+                .focused($newSessionPromptIsFocused)
+                .onSubmit { model.createSession() }
+                Button {
+                    model.createSession()
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                }
+                .buttonStyle(.borderless)
+                .disabled(!model.canCreateSession)
+                .accessibilityLabel("Create Session and send message")
+            }
+            .disabled(
+                model.newSessionDraft.requiresDefaultWorkspace
+                    || model.newSessionDraft.isAwaitingCreatedSession
+            )
+        }
+        .padding(12)
+    }
+
+    private var newSessionModelControl: some View {
+        let effortName = model.newSessionReasoningEfforts.first {
+            $0.id == model.selectedNewSessionReasoningEffortID
+        }?.displayName
+        let label = ConnCompositeModelControlPresentation.label(
+            modelName: model.selectedNewSessionModel?.displayName,
+            reasoningName: effortName,
+            isLoading: model.isLoadingSessionModels
+        )
+        return Button {
+            showsNewSessionModelPopover.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .frame(minWidth: 130, idealWidth: 170, maxWidth: 190)
+        .disabled(
+            model.isLoadingSessionModels
+                || model.sessionModelOptions.isEmpty
+                || model.newSessionDraft.isAwaitingCreatedSession
+        )
+        .accessibilityLabel("Model and reasoning for new Session")
+        .accessibilityValue(label)
+        .help("Choose the model and reasoning effort for the first message.")
+        .popover(isPresented: $showsNewSessionModelPopover) {
+            newSessionModelPopover
+        }
+    }
+
+    private var newSessionModelPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Model & Reasoning")
+                .font(.system(size: 12, weight: .semibold))
+            Picker(
+                "Model",
+                selection: Binding(
+                    get: { model.selectedNewSessionModelID },
+                    set: { model.updateNewSessionModel($0) }
+                )
+            ) {
+                ForEach(model.sessionModelOptions) { option in
+                    Text(option.displayName).tag(Optional(option.id))
+                }
+            }
+            .pickerStyle(.menu)
+            Picker(
+                "Reasoning",
+                selection: $model.selectedNewSessionReasoningEffortID
+            ) {
+                ForEach(model.newSessionReasoningEfforts) { effort in
+                    Text(effort.displayName).tag(Optional(effort.id))
+                }
+            }
+            .pickerStyle(.menu)
+            HStack {
+                Spacer()
+                Button("Done") {
+                    showsNewSessionModelPopover = false
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .padding(14)
+        .frame(width: 260)
     }
 
     private func modalCard<Content: View>(
@@ -884,29 +1053,38 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
     private func compactNotification(
         _ batch: ConnUserFacingNotificationBatch
     ) -> some View {
-        HStack(spacing: 10) {
-            Image(
-                systemName: batch.notifications.last?.isFinal == true
-                    ? "checkmark.circle.fill"
-                    : "waveform.path"
-            )
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(
-                batch.notifications.last?.isFinal == true ? .green : .mint
-            )
-            .accessibilityHidden(true)
+        let isFinal = batch.notifications.last?.isFinal == true
+        return HStack(alignment: .top, spacing: 10) {
+            switch ConnCompactNotificationLayoutPolicy.indicator(
+                isFinal: isFinal
+            ) {
+            case .animatedWaveform:
+                CompactNotificationWaveform(reduceMotion: reduceMotion)
+                    .id(batch.id)
+            case .completion:
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.green)
+                    .frame(width: 18, height: 18)
+                    .accessibilityHidden(true)
+            }
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 8) {
                 ForEach(batch.notifications) { notification in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(notification.sessionTitle)
                             .font(.system(size: 10, weight: .bold))
                             .lineLimit(1)
                         Text(notification.text)
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .lineLimit(
+                                ConnCompactNotificationLayoutPolicy
+                                    .messageLineLimit
+                            )
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             Spacer(minLength: 0)
@@ -917,7 +1095,17 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             .id(batch.id)
         }
         .padding(.horizontal, 12)
-        .frame(height: 52)
+        .frame(
+            width: ConnCompactNotificationLayoutPolicy.contentWidth(
+                placement: model.panelPlacement
+            )
+        )
+        .frame(
+            height: ConnCompactNotificationLayoutPolicy.rowHeight(
+                messageTexts: batch.notifications.map(\.text),
+                placement: model.panelPlacement
+            )
+        )
         .contentShape(Rectangle())
         .onTapGesture {
             if let id = batch.notifications.last?.sessionID {
@@ -936,14 +1124,17 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
-                    .padding(5)
+                    .frame(width: 30, height: 30)
             } else {
                 Text(attribution.label.prefix(1).uppercased())
                     .font(.system(size: 11, weight: .black, design: .rounded))
+                    .frame(width: 26, height: 26)
+                    .background(
+                        .white.opacity(0.09),
+                        in: RoundedRectangle(cornerRadius: 7)
+                    )
             }
         }
-        .frame(width: 26, height: 26)
-        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 7))
         .accessibilityLabel(attribution.label)
     }
 
@@ -1003,6 +1194,39 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
         case .image: "photo"
         case .compaction: "arrow.down.right.and.arrow.up.left"
         case .unknown: "circle.dotted"
+        }
+    }
+}
+
+private struct CompactNotificationWaveform: View {
+    let reduceMotion: Bool
+    @State private var appearedAt = Date()
+
+    var body: some View {
+        TimelineView(.animation(
+            minimumInterval: 1.0 / 30.0,
+            paused: reduceMotion
+        )) { context in
+            let elapsed = context.date.timeIntervalSince(appearedAt)
+            HStack(alignment: .center, spacing: 1.8) {
+                ForEach(0..<5, id: \.self) { index in
+                    Capsule()
+                        .fill(.mint.opacity(index == 2 ? 1 : 0.78))
+                        .frame(
+                            width: 2,
+                            height: ShellCompactShelfMotionPolicy.waveformHeight(
+                                barIndex: index,
+                                elapsed: elapsed,
+                                reduceMotion: reduceMotion
+                            )
+                        )
+                }
+            }
+        }
+        .frame(width: 18, height: 16)
+        .accessibilityHidden(true)
+        .onAppear {
+            appearedAt = Date()
         }
     }
 }

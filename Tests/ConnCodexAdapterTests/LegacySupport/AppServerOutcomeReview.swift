@@ -99,7 +99,7 @@ public struct AppServerOutcomeReviewLedger: Codable, Equatable, Sendable {
                 threadID: outcome.threadID,
                 turnID: outcome.turnID
             )
-            guard Self.isValid(identity) else { continue }
+            guard Self.isValid(identity), identity.threadID == thread.id else { continue }
             let wasObservedActive = observedActiveTurnByThreadID[thread.id.rawValue] == identity
             if wasObservedActive {
                 observedActiveTurnByThreadID.removeValue(forKey: thread.id.rawValue)

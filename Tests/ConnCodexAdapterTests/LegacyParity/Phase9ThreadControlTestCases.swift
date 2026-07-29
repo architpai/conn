@@ -646,11 +646,14 @@ enum Phase9ThreadControlTestCases {
         params: [String: JSONValue]
     ) async throws -> AppServerProjectedRequest {
         let adapter = AppServerObservationAdapter()
-        let input = try adapter.projectionInput(
-            from: .init(id: id, method: method, params: .object(params)),
-            cursor: .init(connection: connection, sequence: 1),
-            observedAt: observedAt
-        )!
+        let input = try unwrap(
+            adapter.projectionInput(
+                from: .init(id: id, method: method, params: .object(params)),
+                cursor: .init(connection: connection, sequence: 1),
+                observedAt: observedAt
+            ),
+            "projection input for \(method)"
+        )
         let store = AppServerProjectionStore()
         _ = await store.apply(.connectionActivated(
             identity: connection,

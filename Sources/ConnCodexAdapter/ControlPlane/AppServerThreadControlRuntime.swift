@@ -1405,19 +1405,7 @@ public actor AppServerThreadControlRuntime {
     }
 
     private func mayRespond(to request: AppServerProjectedRequest) -> Bool {
-        switch configuration.routingPolicy {
-        case .allSubscribedConnectionsQualified:
-            switch request.kind {
-            case .commandApproval, .fileChangeApproval, .permissionsApproval:
-                return true
-            case .structuredQuestion, .mcpElicitation, .unknown:
-                guard let turnID = request.turnID else { return false }
-                return connOriginatedTurnIDs.contains(turnID)
-            }
-        case .connOriginatedTurnsOnly:
-            guard let turnID = request.turnID else { return false }
-            return connOriginatedTurnIDs.contains(turnID)
-        }
+        availability().mayRespond(to: request)
     }
 
     private func containsRequest(

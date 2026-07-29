@@ -17,7 +17,126 @@ enum Phase4NeutralAggregationTestCases {
         try await restoredStateIsNonActionable(into: &suite)
         try twoSlotStoreRecoversLastValidGeneration(into: &suite)
         neutralPresentationPoliciesUseOnlySemanticState(into: &suite)
+        historicalCompletedActivitiesLoadedLaterStaySilent(into: &suite)
         completedRunsCompressAroundTheirFullAnswer(into: &suite)
+    }
+
+    private static func historicalCompletedActivitiesLoadedLaterStaySilent(
+        into suite: inout TestSuite
+    ) {
+        let sessionID = ConnSessionID(
+            integrationID: codexID,
+            upstreamID: .init(rawValue: "historical-completion")
+        )
+        let run = ConnRun(
+            id: .init(rawValue: "historical-run"),
+            status: .completed,
+            startedAt: at(1),
+            completedAt: at(2)
+        )
+        var ledger = ConnUserFacingNotificationLedger()
+        suite.check(
+            ledger.collect(from: ConnPresentationBuilder.make(aggregate(
+                session: .init(
+                    id: sessionID,
+                    status: .completed,
+                    runs: [run],
+                    updatedAt: at(2)
+                ),
+                revision: 1
+            ))).isEmpty,
+            "initial completed inventory seeds silently before details load"
+        )
+
+        let historicalAnswer = ConnActivity(
+            id: .init(rawValue: "historical-answer"),
+            runID: run.id,
+            kind: .agentMessage,
+            status: .completed,
+            summary: "An answer completed long before Conn opened this Session.",
+            observedAt: at(2)
+        )
+        suite.check(
+            ledger.collect(from: ConnPresentationBuilder.make(aggregate(
+                session: .init(
+                    id: sessionID,
+                    status: .completed,
+                    runs: [run],
+                    activities: [historicalAnswer],
+                    updatedAt: at(2)
+                ),
+                revision: 2
+            ))).isEmpty,
+            "opening a completed Session does not replay its historical answer as a notification"
+        )
+
+        let followUpRun = ConnRun(
+            id: .init(rawValue: "follow-up-run"),
+            status: .inProgress,
+            startedAt: at(3)
+        )
+        _ = ledger.collect(from: ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: sessionID,
+                status: .working,
+                runs: [run, followUpRun],
+                activities: [historicalAnswer],
+                updatedAt: at(3)
+            ),
+            revision: 3
+        )))
+        let followUpAnswer = ConnActivity(
+            id: .init(rawValue: "follow-up-answer"),
+            runID: followUpRun.id,
+            kind: .agentMessage,
+            status: .completed,
+            summary: "A genuinely new answer.",
+            observedAt: at(4)
+        )
+        let completedFollowUp = ConnRun(
+            id: followUpRun.id,
+            status: .completed,
+            startedAt: at(3),
+            completedAt: at(4)
+        )
+        suite.checkEqual(
+            ledger.collect(from: ConnPresentationBuilder.make(aggregate(
+                session: .init(
+                    id: sessionID,
+                    status: .completed,
+                    runs: [run, completedFollowUp],
+                    activities: [historicalAnswer, followUpAnswer],
+                    updatedAt: at(4)
+                ),
+                revision: 4
+            ))).map(\.text),
+            ["A genuinely new answer."],
+            "a follow-up notifies only output from the Run Conn observed active"
+        )
+
+        var delayedHydrationLedger = ConnUserFacingNotificationLedger()
+        _ = delayedHydrationLedger.collect(from: ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: sessionID,
+                status: .completed,
+                runs: [run],
+                updatedAt: at(2)
+            ),
+            revision: 5
+        )))
+        suite.check(
+            delayedHydrationLedger.collect(from: ConnPresentationBuilder.make(aggregate(
+                session: .init(
+                    id: sessionID,
+                    status: .working,
+                    runs: [run, followUpRun],
+                    activities: [historicalAnswer],
+                    updatedAt: at(3)
+                ),
+                revision: 6
+            ))).isEmpty,
+            "starting a follow-up cannot replay a late-hydrated answer from an older completed Run"
+        )
     }
 
     private static func completedRunsCompressAroundTheirFullAnswer(
@@ -499,6 +618,71 @@ enum Phase4NeutralAggregationTestCases {
             "neutral Session status drives visual state"
         )
         suite.checkEqual(
+            ConnStatusPillPolicy.make(from: presentation.sessions).map(\.kind),
+            [.completed],
+            "completed Sessions remain represented in the status display"
+        )
+        let idlePresentation = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: .init(
+                    integrationID: codexID,
+                    upstreamID: .init(rawValue: "idle-status-pill")
+                ),
+                title: "Idle Session",
+                status: .idle,
+                updatedAt: at(2)
+            ),
+            revision: 2
+        ))
+        suite.checkEqual(
+            ConnStatusPillPolicy.make(from: idlePresentation.sessions).map(\.kind),
+            [.idle],
+            "idle Sessions remain represented in the status display"
+        )
+        let oldIdle = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: .init(
+                    integrationID: codexID,
+                    upstreamID: .init(rawValue: "old-idle-status-pill")
+                ),
+                title: "Old Idle Session",
+                status: .idle,
+                updatedAt: at(1)
+            ),
+            revision: 3
+        )).sessions
+        let recentIdle = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: .init(
+                    integrationID: codexID,
+                    upstreamID: .init(rawValue: "recent-idle-status-pill")
+                ),
+                title: "Recent Idle Session",
+                status: .idle,
+                updatedAt: at(90_000)
+            ),
+            revision: 4
+        )).sessions
+        let visibleRows = SessionPickerPolicy.select(
+            sessions: oldIdle + recentIdle,
+            projects: [],
+            configuration: .init(activityWindow: .last24Hours),
+            now: at(90_001)
+        ).rows
+        let filteredIdlePill = ConnStatusPillPolicy.make(
+            from: visibleRows.map(\.session)
+        ).first
+        suite.checkEqual(
+            filteredIdlePill?.count,
+            1,
+            "idle count excludes inventory outside the sidebar's 24-hour window"
+        )
+        suite.checkEqual(
+            filteredIdlePill?.primarySessionID,
+            recentIdle.first?.id,
+            "idle pill navigation stays inside the sidebar's filtered rows"
+        )
+        suite.checkEqual(
             SessionPickerPolicy.select(
                 sessions: presentation.sessions,
                 projects: presentation.projects,
@@ -514,15 +698,76 @@ enum Phase4NeutralAggregationTestCases {
             notificationLedger.collect(from: presentation).isEmpty,
             "first hydration seeds notification history silently"
         )
+        let secondRun = ConnRun(
+            id: .init(rawValue: "second-run"),
+            status: .inProgress,
+            startedAt: at(3)
+        )
+        _ = notificationLedger.collect(
+            from: ConnPresentationBuilder.make(aggregate(
+                session: .init(
+                    id: sessionID,
+                    title: "Neutral Session",
+                    workspace: .init(
+                        canonicalPath: "/tmp/neutral-project",
+                        equivalenceKey: "neutral-project"
+                    ),
+                    status: .working,
+                    runs: [firstRun, secondRun],
+                    activities: [firstActivity],
+                    updatedAt: at(3)
+                ),
+                revision: 2
+            ))
+        )
         let secondActivity = ConnActivity(
             id: .init(rawValue: "second-message"),
-            runID: firstRun.id,
+            runID: secondRun.id,
             kind: .agentMessage,
             status: .completed,
             summary: "New bounded message",
-            observedAt: at(3)
+            observedAt: at(4)
         )
-        let updated = aggregate(
+        let completedSecondRun = ConnRun(
+            id: secondRun.id,
+            status: .completed,
+            startedAt: at(3),
+            completedAt: at(4)
+        )
+        let messageCompletedWhileRunContinues = aggregate(
+            session: .init(
+                id: sessionID,
+                title: "Neutral Session",
+                workspace: .init(
+                    canonicalPath: "/tmp/neutral-project",
+                    equivalenceKey: "neutral-project"
+                ),
+                status: .working,
+                runs: [firstRun, secondRun],
+                activities: [firstActivity, secondActivity],
+                updatedAt: at(4)
+            ),
+            revision: 3
+        )
+        let newNotifications = notificationLedger.collect(
+            from: ConnPresentationBuilder.make(messageCompletedWhileRunContinues)
+        )
+        suite.checkEqual(
+            newNotifications.map(\.text),
+            ["New bounded message"],
+            "only newly observed user-facing semantic output notifies"
+        )
+        let activeBatch = ConnUserFacingNotificationPolicy.batch(newNotifications)
+        suite.checkEqual(
+            activeBatch?.notifications.count,
+            1,
+            "Compact Shelf notification batching stays bounded"
+        )
+        suite.check(
+            activeBatch?.notifications.first?.isFinal == false,
+            "an answer arriving while its Run remains active initially shows activity"
+        )
+        let completedPresentation = ConnPresentationBuilder.make(aggregate(
             session: .init(
                 id: sessionID,
                 title: "Neutral Session",
@@ -531,25 +776,66 @@ enum Phase4NeutralAggregationTestCases {
                     equivalenceKey: "neutral-project"
                 ),
                 status: .completed,
-                runs: [firstRun],
+                runs: [firstRun, completedSecondRun],
                 activities: [firstActivity, secondActivity],
-                updatedAt: at(3)
+                updatedAt: at(5)
             ),
-            revision: 2
-        )
-        let newNotifications = notificationLedger.collect(
-            from: ConnPresentationBuilder.make(updated)
+            revision: 4
+        ))
+        let completedBatch = activeBatch.map {
+            ConnUserFacingNotificationPolicy.reconcileFinality(
+                of: $0,
+                with: completedPresentation
+            )
+        }
+        suite.check(
+            completedBatch?.notifications.first?.isFinal == true,
+            "the visible activity notification upgrades when its Session completes"
         )
         suite.checkEqual(
-            newNotifications.map(\.text),
-            ["New bounded message"],
-            "only newly observed user-facing semantic output notifies"
+            completedBatch?.id,
+            activeBatch?.id,
+            "completion feedback preserves notification identity and its timer"
         )
         suite.checkEqual(
-            ConnUserFacingNotificationPolicy.batch(newNotifications)?
-                .notifications.count,
-            1,
-            "Compact Shelf notification batching stays bounded"
+            completedBatch?.duration,
+            activeBatch?.duration,
+            "completion feedback does not restart or extend notification timing"
+        )
+
+        var sessionFallbackLedger = ConnUserFacingNotificationLedger()
+        _ = sessionFallbackLedger.collect(from: ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: sessionID,
+                status: .working,
+                runs: [],
+                updatedAt: at(6)
+            ),
+            revision: 5
+        )))
+        let sessionScopedActivity = ConnActivity(
+            id: .init(rawValue: "session-fallback-message"),
+            kind: .agentMessage,
+            status: .completed,
+            summary: "Session-scoped update",
+            observedAt: at(7)
+        )
+        let fallbackNotifications = sessionFallbackLedger.collect(
+            from: ConnPresentationBuilder.make(aggregate(
+                session: .init(
+                    id: sessionID,
+                    status: .working,
+                    runs: [],
+                    activities: [sessionScopedActivity],
+                    updatedAt: at(7)
+                ),
+                revision: 6
+            ))
+        )
+        suite.checkEqual(
+            fallbackNotifications.map(\.text),
+            ["Session-scoped update"],
+            "a previously active Session can notify genuinely Session-scoped output"
         )
 
         var review = ConnOutcomeReviewLedger(baselineAt: at(2))
@@ -561,8 +847,50 @@ enum Phase4NeutralAggregationTestCases {
             review.unreviewedOutcomeIDs.isEmpty,
             "historical completion is reviewed at the fresh baseline"
         )
-        let secondRun = ConnRun(
-            id: .init(rawValue: "second-run"),
+        let overflowDescriptor = IntegrationDescriptor(
+            id: codexID,
+            harnessID: .init(rawValue: "openai"),
+            displayName: "Codex"
+        )
+        let overflowSessions = (0...ConnOutcomeReviewLedger.maximumMarkers).map { index in
+            let overflowID = ConnSessionID(
+                integrationID: codexID,
+                upstreamID: .init(rawValue: "active-overflow-\(index)")
+            )
+            return ConnSessionState(
+                session: .init(
+                    id: overflowID,
+                    status: .working,
+                    runs: [.init(
+                        id: .init(rawValue: "run-\(index)"),
+                        status: .inProgress,
+                        startedAt: at(8)
+                    )],
+                    updatedAt: at(8)
+                ),
+                integration: overflowDescriptor,
+                freshness: .live,
+                actionAvailability: .init(available: [], unavailable: [:]),
+                attention: []
+            )
+        }
+        var boundedReview = ConnOutcomeReviewLedger(baselineAt: at(8))
+        _ = boundedReview.reconcile(
+            with: .init(
+                revision: 8,
+                integrations: [],
+                sessions: overflowSessions,
+                projects: [],
+                persistenceHealth: .notConfigured
+            ),
+            observedAt: at(8)
+        )
+        suite.check(
+            boundedReview.isValid(),
+            "active Run observations are trimmed to the durable ledger bound"
+        )
+        let reviewSecondRun = ConnRun(
+            id: .init(rawValue: "review-second-run"),
             status: .inProgress,
             startedAt: at(3)
         )
@@ -571,15 +899,15 @@ enum Phase4NeutralAggregationTestCases {
                 session: .init(
                     id: sessionID,
                     status: .working,
-                    runs: [firstRun, secondRun],
+                    runs: [firstRun, reviewSecondRun],
                     updatedAt: at(3)
                 ),
-                revision: 3
+                revision: 5
             ),
             observedAt: at(3)
         )
-        let completedSecondRun = ConnRun(
-            id: secondRun.id,
+        let completedReviewSecondRun = ConnRun(
+            id: reviewSecondRun.id,
             status: .completed,
             startedAt: at(3),
             completedAt: at(4)
@@ -589,17 +917,17 @@ enum Phase4NeutralAggregationTestCases {
                 session: .init(
                     id: sessionID,
                     status: .completed,
-                    runs: [firstRun, completedSecondRun],
+                    runs: [firstRun, completedReviewSecondRun],
                     updatedAt: at(4)
                 ),
-                revision: 4
+                revision: 6
             ),
             observedAt: at(4)
         )
         suite.check(
             review.unreviewedOutcomeIDs.contains(.init(
                 sessionID: sessionID,
-                runID: secondRun.id
+                runID: reviewSecondRun.id
             )),
             "a Run observed active then terminal becomes a new review outcome"
         )

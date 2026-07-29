@@ -9,6 +9,14 @@ public enum ConnTranscriptAlignmentPolicy {
     public static func lane(for kind: ConnActivityKind) -> ConnTranscriptLane {
         kind == .userMessage ? .trailing : .leading
     }
+
+    /// Bubble placement communicates speaker direction; paragraph alignment
+    /// remains leading so multiline messages retain a stable reading edge.
+    public static func contentLane(
+        for kind: ConnActivityKind
+    ) -> ConnTranscriptLane {
+        .leading
+    }
 }
 
 public enum ConnTranscriptStyle: Equatable, Sendable {

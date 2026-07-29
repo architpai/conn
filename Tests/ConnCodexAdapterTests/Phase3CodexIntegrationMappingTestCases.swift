@@ -145,6 +145,15 @@ enum Phase3CodexIntegrationMappingTestCases {
         let snapshot = mapping.snapshot
         let session = snapshot.sessions.first
 
+        suite.checkEqual(
+            CodexIntegrationIdentity.sessionID(for: threadID),
+            .init(
+                integrationID: CodexIntegrationIdentity.integrationID,
+                upstreamID: .init(rawValue: threadID.rawValue)
+            ),
+            "created Codex Thread identity maps to the provider-neutral Session returned to Conn"
+        )
+
         suite.check(
             snapshot.integration == CodexIntegrationIdentity.descriptor
                 && snapshot.integration.harnessID == .init(rawValue: "openai"),

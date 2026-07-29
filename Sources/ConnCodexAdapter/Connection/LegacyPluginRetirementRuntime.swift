@@ -151,6 +151,13 @@ public actor LegacyPluginRetirementRuntime {
         }
         let policy = AppServerCompatibilityPolicy(version: captured.version)
         guard policy.supports(method: "plugin/uninstall") else { return .unsupported }
+        let uniqueVerificationDirectories = Set(verificationWorkingDirectories)
+        guard !verificationWorkingDirectories.isEmpty,
+              verificationWorkingDirectories.count <= 32,
+              uniqueVerificationDirectories.count == verificationWorkingDirectories.count,
+              verificationWorkingDirectories.allSatisfy({
+                  $0.hasPrefix("/") && $0.utf8.count <= 4_096
+              }) else { return .staleConfirmation }
         let attempt = Attempt(
             wireIdentity: captured.wireIdentity,
             pluginID: candidate.pluginID

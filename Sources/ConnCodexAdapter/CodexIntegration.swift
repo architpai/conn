@@ -9,6 +9,15 @@ public enum CodexIntegrationIdentity {
         harnessID: harnessID,
         displayName: "Codex"
     )
+
+    package static func sessionID(
+        for threadID: AppServerThreadID
+    ) -> ConnSessionID {
+        .init(
+            integrationID: integrationID,
+            upstreamID: .init(rawValue: threadID.rawValue)
+        )
+    }
 }
 
 /// Production Codex implementation of the provider-neutral Conn port.
@@ -155,7 +164,13 @@ public actor CodexIntegration: ConnIntegration {
             if result.outcome == .accepted, let threadID = result.createdThreadID {
                 originRegistry.insert(threadID)
             }
-            return outcome(for: action, result.outcome)
+            return outcome(
+                for: action,
+                result.outcome,
+                createdSessionID: result.createdThreadID.map {
+                    CodexIntegrationIdentity.sessionID(for: $0)
+                }
+            )
 
         case let .followUp(sessionID, text, modelSelection):
             let selectedModel: String?
@@ -392,21 +407,28 @@ public actor CodexIntegration: ConnIntegration {
     private func outcome(
         for action: ConnAction,
         _ kind: ConnActionOutcomeKind,
-        _ evidence: String? = nil
+        _ evidence: String? = nil,
+        createdSessionID: ConnSessionID? = nil
     ) -> ConnActionOutcome {
         .init(
             integrationID: descriptor.id,
             action: action.kind,
             kind: kind,
-            evidence: evidence
+            evidence: evidence,
+            createdSessionID: createdSessionID
         )
     }
 
     private func outcome(
         for action: ConnAction,
-        _ result: AppServerControlOutcome
+        _ result: AppServerControlOutcome,
+        createdSessionID: ConnSessionID? = nil
     ) -> ConnActionOutcome {
-        outcome(for: action, result.connOutcome)
+        outcome(
+            for: action,
+            result.connOutcome,
+            createdSessionID: createdSessionID
+        )
     }
 }
 

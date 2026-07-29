@@ -94,10 +94,24 @@ The job exits after setting the flag. A later explicit setup retry may
 `kickstart` the one job after showing its exact effect; `KeepAlive` must not
 relaunch it forever.
 
-The setup does not modify the application bundle, Codex configuration, shell
-profiles, login items, system LaunchDaemons, or other users' state. Starting an
-absent Codex-managed daemon is not reversed during Shared Desktop rollback:
-Conn does not own that daemon and must not stop it.
+Conn's **Launch Conn at login** setting is independent of Shared Desktop Mode
+and uses the supported macOS main-app login-item service. If it is off when the
+user chooses Shared Desktop setup, Conn asks for consent and offers **Set Up
+and Launch at Login**, **Set Up Only**, and **Cancel**. Login-item registration
+must not be bundled into setup without that choice. If macOS requires approval
+in System Settings, the combined path stops and reports that requirement rather
+than claiming launch at login is ready.
+
+Launching Conn at login improves recovery after a restart, but macOS does not
+guarantee ordering between Conn and ChatGPT/Codex Desktop as separate login
+items. The Shared Desktop setup LaunchAgent still owns only the one GUI
+environment flag and does not start Conn or the Codex-managed daemon.
+
+Apart from the separately consented Conn login item, setup does not modify the
+application bundle, Codex configuration, shell profiles, other login items,
+system LaunchDaemons, or other users' state. Starting an absent Codex-managed
+daemon is not reversed during Shared Desktop rollback: Conn does not own that
+daemon and must not stop it.
 
 An existing same-name LaunchAgent is never silently overwritten. Conn replaces
 only its exact current contract or its recognized previous v1 contract. Any

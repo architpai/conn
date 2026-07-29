@@ -20,6 +20,93 @@ public enum ConnSessionVisualState: String, Equatable, Sendable {
     case unknown
 }
 
+public enum ConnStatusPillKind:
+    String,
+    CaseIterable,
+    Equatable,
+    Hashable,
+    Sendable
+{
+    case attention
+    case working
+    case failed
+    case completed
+    case idle
+    case stale
+    case unknown
+}
+
+public struct ConnStatusPillPresentation: Equatable, Identifiable, Sendable {
+    public var id: ConnStatusPillKind { kind }
+    public let kind: ConnStatusPillKind
+    public let count: Int
+    public let label: String
+    public let tone: ConnPresentationTone
+    public let primarySessionID: ConnSessionID
+
+    public init(
+        kind: ConnStatusPillKind,
+        count: Int,
+        label: String,
+        tone: ConnPresentationTone,
+        primarySessionID: ConnSessionID
+    ) {
+        self.kind = kind
+        self.count = count
+        self.label = label
+        self.tone = tone
+        self.primarySessionID = primarySessionID
+    }
+}
+
+public enum ConnStatusPillPolicy {
+    public static func make(
+        from sessions: [ConnSessionPresentation]
+    ) -> [ConnStatusPillPresentation] {
+        ConnStatusPillKind.allCases.compactMap { kind in
+            let matching = sessions.filter {
+                statusPillKind(for: $0.visualState) == kind
+            }.sorted {
+                if $0.updatedAt != $1.updatedAt {
+                    return $0.updatedAt > $1.updatedAt
+                }
+                return $0.id < $1.id
+            }
+            guard let primary = matching.first else { return nil }
+            let presentation: (String, ConnPresentationTone) = switch kind {
+            case .attention: ("Needs attention", .attention)
+            case .working: ("Working", .active)
+            case .failed: ("Failed", .failure)
+            case .completed: ("Completed", .success)
+            case .idle: ("Idle", .neutral)
+            case .stale: ("Stale", .stale)
+            case .unknown: ("Unknown", .neutral)
+            }
+            return .init(
+                kind: kind,
+                count: matching.count,
+                label: presentation.0,
+                tone: presentation.1,
+                primarySessionID: primary.id
+            )
+        }
+    }
+
+    private static func statusPillKind(
+        for visualState: ConnSessionVisualState
+    ) -> ConnStatusPillKind {
+        switch visualState {
+        case .waitingForAttention: .attention
+        case .working: .working
+        case .failed: .failed
+        case .completed: .completed
+        case .idle: .idle
+        case .stale: .stale
+        case .unknown: .unknown
+        }
+    }
+}
+
 public struct ConnIntegrationPresentation: Equatable, Identifiable, Sendable {
     public var id: IntegrationID { state.id }
     public let state: ConnIntegrationState
@@ -221,7 +308,10 @@ public enum ConnPresentationBuilder {
         let sessions = snapshot.sessions.map {
             session($0, harnessAssets: harnessAssets)
         }
-        let byID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        let byID = Dictionary(
+            sessions.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let projects = snapshot.projects.map { project in
             ConnProjectPresentation(
                 state: project,

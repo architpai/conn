@@ -122,12 +122,22 @@ public struct ConnOutcomeReviewLedger: Codable, Equatable, Sendable {
     }
 
     private mutating func trim() {
-        guard markersBySessionID.count > Self.maximumMarkers else { return }
-        markersBySessionID = Dictionary(
-            uniqueKeysWithValues: markers.prefix(Self.maximumMarkers).map {
-                ($0.identity.sessionID, $0)
-            }
-        )
+        if markersBySessionID.count > Self.maximumMarkers {
+            markersBySessionID = Dictionary(
+                uniqueKeysWithValues: markers.prefix(Self.maximumMarkers).map {
+                    ($0.identity.sessionID, $0)
+                }
+            )
+        }
+        if activeRunBySessionID.count > Self.maximumMarkers {
+            activeRunBySessionID = Dictionary(
+                uniqueKeysWithValues: activeRunBySessionID.keys.sorted()
+                    .prefix(Self.maximumMarkers)
+                    .compactMap { sessionID in
+                        activeRunBySessionID[sessionID].map { (sessionID, $0) }
+                    }
+            )
+        }
     }
 }
 

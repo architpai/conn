@@ -7,6 +7,7 @@ enum Phase4ShellPolicyTestCases {
         testOpenCodexHandoff(into: &suite)
         testDetailAwareGeometry(into: &suite)
         testExpandedRowScrollingPolicy(into: &suite)
+        testLaunchAtLoginPolicy(into: &suite)
     }
 
     private static func testOpenCodexHandoff(into suite: inout TestSuite) {
@@ -206,6 +207,39 @@ enum Phase4ShellPolicyTestCases {
         suite.check(pinnedOverflow.requiresUnifiedScrolling, "six pinned rows use the bounded unified scroll region")
         suite.checkEqual(pinnedOverflow.initialViewportRows.count, 5, "pinned overflow remains capped at five visible rows")
         suite.checkEqual(pinnedOverflow.hiddenRowCount, 1, "pinned overflow keeps every excess row scroll-reachable")
+    }
+
+    private static func testLaunchAtLoginPolicy(into suite: inout TestSuite) {
+        suite.check(
+            !ConnLaunchAtLoginPolicy.isOn(.disabled),
+            "an unregistered login item renders off"
+        )
+        suite.check(
+            ConnLaunchAtLoginPolicy.isOn(.enabled),
+            "an enabled login item renders on"
+        )
+        suite.check(
+            ConnLaunchAtLoginPolicy.isOn(.requiresApproval),
+            "a pending login item remains visible so the user can turn it off"
+        )
+        suite.check(
+            !ConnLaunchAtLoginPolicy.isConfirmedEnabled(
+                .requiresApproval
+            ),
+            "Shared Desktop setup cannot treat pending login approval as enabled"
+        )
+        suite.check(
+            ConnLaunchAtLoginPolicy.isConfirmedEnabled(.enabled),
+            "confirmed login launch permits the combined setup flow"
+        )
+        suite.check(
+            ConnLaunchAtLoginPolicy.canChange(.disabled),
+            "an available unregistered login item can be changed"
+        )
+        suite.check(
+            !ConnLaunchAtLoginPolicy.canChange(.unavailable),
+            "an unavailable service does not present a false toggle action"
+        )
     }
 
     private static func externalDisplay() -> ShellDisplayDescriptor {

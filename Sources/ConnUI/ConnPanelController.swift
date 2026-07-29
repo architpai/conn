@@ -33,9 +33,7 @@ package enum ConnPanelFramePolicy {
         let height: CGFloat = expanded
             ? min(620, visibleFrame.height - 44)
             : max(44, compactShelfPreferredHeight)
-        let topEdge = placement == .physicalNotch
-            ? displayFrame.maxY
-            : visibleFrame.maxY - 8
+        let topEdge = displayFrame.maxY
         let frame = CGRect(
             x: anchorFrame.midX - width / 2,
             y: topEdge - height,
@@ -207,7 +205,10 @@ public final class ConnPanelController<IntegrationSettingsContent: View> {
         localEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
             [weak self] event in
             guard event.keyCode == UInt16(kVK_Escape) else { return event }
-            self?.collapse()
+            guard let self,
+                  self.model.isExpanded,
+                  event.window === self.panel else { return event }
+            self.collapse()
             return nil
         }
         globalOutsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
@@ -222,22 +223,36 @@ public final class ConnPanelController<IntegrationSettingsContent: View> {
     }
 
     private func expand() {
-        model.setSurfaceState(.expanded)
+        let transition = model.beginSurfaceGeometryTransition(to: .expanded)
         NSRunningApplication.current.activate(options: [.activateAllWindows])
         panel.makeKeyAndOrderFront(nil)
-        applyGeometry(animated: true)
+        applyGeometry(animated: true) { [weak self] in
+            self?.model.completeSurfaceGeometryTransition(
+                to: .expanded,
+                generation: transition
+            )
+        }
     }
 
     private func collapse() {
-        model.setSurfaceState(.compact)
-        applyGeometry(animated: true)
+        let transition = model.beginSurfaceGeometryTransition(to: .compact)
+        applyGeometry(animated: true) { [weak self] in
+            self?.model.completeSurfaceGeometryTransition(
+                to: .compact,
+                generation: transition
+            )
+        }
         if lifecycleState == .active || canRecoverFromHiddenState {
             panel.orderFrontRegardless()
         }
     }
 
-    private func applyGeometry(animated: Bool) {
+    private func applyGeometry(
+        animated: Bool,
+        completion: (@MainActor @Sendable () -> Void)? = nil
+    ) {
         guard let screen = selectedScreen ?? NSScreen.main ?? NSScreen.screens.first else {
+            completion?()
             return
         }
         let frame = Self.frameDecision(
@@ -248,6 +263,7 @@ public final class ConnPanelController<IntegrationSettingsContent: View> {
         guard animated,
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             panel.setFrame(frame, display: true)
+            completion?()
             return
         }
         NSAnimationContext.runAnimationGroup { context in
@@ -256,6 +272,8 @@ public final class ConnPanelController<IntegrationSettingsContent: View> {
                 name: .easeInEaseOut
             )
             panel.animator().setFrame(frame, display: true)
+        } completionHandler: {
+            Task { @MainActor in completion?() }
         }
     }
 
