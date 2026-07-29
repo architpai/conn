@@ -42,7 +42,7 @@ jobs:
       - name: Build Conn
         run: swift build
       - name: Codex adapter tests
-        run: '"$(swift build --show-bin-path)/conn-codex-adapter-tests"'
+        run: '"$(swift build --show-bin-path)/conn-codex-adapter-tests" --portable'
       - name: Domain tests
         run: '"$(swift build --show-bin-path)/conn-domain-tests"'
       # The app-core suite exercises macOS session and workspace behavior that

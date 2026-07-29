@@ -61,6 +61,10 @@ struct ConnCodexAdapterTestRunner {
         await Phase6LifecycleTestCases.run(in: &suite)
         await Phase6ConnectionTestCases.run(in: &suite)
         await Phase7InboundEnvelopeTestCases.run(in: &suite)
+        if CommandLine.arguments.contains("--portable") {
+            await Phase10SharedDesktopHostInspectorTestCases.run(in: &suite)
+            complete(suite)
+        }
         do {
             try await Phase7AppServerProjectionTestCases.run(into: &suite)
         } catch {
@@ -107,11 +111,14 @@ struct ConnCodexAdapterTestRunner {
             suite.recordUnexpected(error, context: "unexpected Codex adapter test error")
         }
 
+        complete(suite)
+    }
+
+    private static func complete(_ suite: TestSuite) -> Never {
         if suite.failures.isEmpty {
             print("PASS: \(suite.assertions) assertions")
             Foundation.exit(EXIT_SUCCESS)
         }
-
         fputs("FAIL: \(suite.failures.count) of \(suite.assertions) assertions failed\n", stderr)
         for failure in suite.failures {
             fputs("- \(failure)\n", stderr)
