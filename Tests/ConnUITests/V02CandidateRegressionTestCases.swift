@@ -221,6 +221,30 @@ enum V02CandidateRegressionTestCases {
             "Loading models…",
             "the compact composer control exposes model-loading state"
         )
+        suite.checkEqual(
+            ConnMarkMotionPolicy.rotationDegrees(
+                elapsed: 1.75,
+                reduceMotion: false
+            ),
+            90,
+            "the Conn mark completes one quarter of its orbit in 1.75 seconds"
+        )
+        suite.checkEqual(
+            ConnMarkMotionPolicy.rotationDegrees(
+                elapsed: 7,
+                reduceMotion: false
+            ),
+            0,
+            "the Conn mark completes one continuous orbit every seven seconds"
+        )
+        suite.checkEqual(
+            ConnMarkMotionPolicy.rotationDegrees(
+                elapsed: 3.5,
+                reduceMotion: true
+            ),
+            0,
+            "Reduce Motion keeps the Conn mark in its canonical static pose"
+        )
         var sleepCount = 0
         var expiredIDs: [String] = []
         let expiryEvents = AsyncStream<String>.makeStream(

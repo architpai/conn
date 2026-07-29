@@ -1,6 +1,6 @@
 # Conn
 
-![Conn — supervise Codex from the macOS notch](.github/assets/conn-banner.png)
+![Conn — a notch-native supervision surface for AI harnesses](.github/assets/conn-banner.png)
 
 [Visit the Conn website](https://conn-umber.vercel.app/) · [Download the latest release](https://github.com/architpai/conn/releases/latest)
 
@@ -20,12 +20,16 @@ product.
 
 ## What Conn does
 
-- Keeps working, idle, completed, failed, and attention-needing Sessions visible
-  in a compact top-center surface.
-- Expands into a focused workspace for switching Sessions and reading recent
-  structured output.
+- Keeps the Sessions in the current active and 24-hour view visible in a compact
+  top-center surface, with status counts scoped to exactly that visible set.
+- Expands into a focused workspace with harness attribution, Session switching,
+  chronological activity, grouped Runs, full completion summaries, and elapsed
+  work time.
 - Supports capability-gated approval, question, follow-up, steer, and stop
   actions through Codex App Server.
+- Starts a New Session as a local draft in the default Workspace, with one
+  compact model-and-reasoning control; Codex creates the real Session only when
+  the first message is sent.
 - Rehydrates state after reconnecting without taking ownership of Codex Sessions
   or their lifecycle.
 - Offers an optional Labs flow for qualifying Codex Desktop and Conn as clients
@@ -45,9 +49,10 @@ Download the latest macOS archive from
 [GitHub Releases](https://github.com/architpai/conn/releases/latest), verify the
 included checksum, open the DMG, and drag Conn into Applications.
 
-The hackathon build is ad-hoc signed because a Developer ID certificate was not
-available on the build machine. macOS will therefore require an explicit
-Control-click **Open** on first launch. It is not notarized. See
+The current alpha build is ad-hoc signed. macOS will therefore require an
+explicit Control-click **Open** on first launch, and **Launch Conn at login**
+cannot be registered by this artifact. Developer ID signing and notarization
+are planned before Conn leaves alpha. See
 [INSTALL.md](INSTALL.md) for the exact binary and source installation paths,
 Gatekeeper steps, supported versions, verification commands, and uninstall
 instructions.
@@ -60,8 +65,11 @@ instructions.
 3. Leave **Shared Desktop Mode** off; Managed Daemon Mode is the default.
 4. Start or resume a harmless Codex Session through the managed daemon.
 5. Confirm the Session appears in Conn, expand it, and inspect its activity.
-6. Send a benign follow-up or create an ephemeral Session from Conn, then confirm the Run
-   continues if Conn is closed and reopened.
+6. Open **New Session**, confirm the draft uses the default Workspace, choose a
+   model and reasoning effort, and verify that no Session appears until the
+   first message is sent.
+7. Send a benign follow-up, then confirm the Run continues if Conn is closed and
+   reopened.
 
 Conn fails closed when the App Server version is unsupported. Some approval and
 question controls only appear when the connected Codex host emits the matching

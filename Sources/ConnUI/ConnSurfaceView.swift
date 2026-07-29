@@ -117,10 +117,8 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                     model.onToggleExpansion?()
                 } label: {
                     HStack(spacing: 7) {
-                        Image(nsImage: NSApp.applicationIconImage)
-                            .resizable()
+                        ConnMarkView()
                             .frame(width: 22, height: 22)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
                         if presentation.showsProductName {
                             Text("CONN")
                                 .font(.system(size: 11, weight: .black, design: .rounded))

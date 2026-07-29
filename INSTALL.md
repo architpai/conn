@@ -36,6 +36,11 @@ The expected output is `codex-cli 0.144.5` or `codex-cli 0.144.6`.
 5. Conn appears at the top center of the display. Managed Daemon Mode is ready
    without a plugin or hook installation.
 
+The ad-hoc alpha cannot register **Launch Conn at login** with macOS. That
+setting remains visibly unavailable until Conn is signed with a Developer ID
+identity; launch-at-login support is part of the signed distribution path
+planned before Conn leaves alpha.
+
 Do not enable Shared Desktop Mode for the basic test path. It is an optional
 Labs feature with a separate qualification and rollback guide in
 `docs/shared-desktop-mode.md`.
@@ -53,7 +58,8 @@ open .build/conn-app
 
 Drag `Conn.app` from the Finder window into `/Applications`, then use the same
 Control-click **Open** flow described above. The build script creates an ad-hoc
-signature locally and verifies the bundle before returning success.
+signature locally and verifies the bundle before returning success. As with the
+downloadable alpha, an ad-hoc source build cannot register Launch Conn at login.
 
 To install from Terminal instead of Finder:
 
