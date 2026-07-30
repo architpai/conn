@@ -81,7 +81,8 @@ enum PiLocalBrokerTestCases {
 
     static func openRegisteredClient(
         socketURL: URL,
-        descriptor: PiBrokerRuntimeDescriptor
+        descriptor: PiBrokerRuntimeDescriptor,
+        outcome: PiBridgeRunOutcome? = nil
     ) throws -> (descriptor: Int32, response: String) {
         let socketDescriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
         guard socketDescriptor >= 0 else { throw BrokerTestError.socket }
@@ -103,8 +104,9 @@ enum PiLocalBrokerTestCases {
             }
         }
         guard connected == 0 else { throw BrokerTestError.connect }
+        let outcomeField = outcome.map { ",\"outcome\":\"\($0.rawValue)\"" } ?? ""
         let frame = """
-        {"type":"register","protocol":1,"generation":"\(descriptor.generation.uuidString)","secret":"\(descriptor.authenticationSecret)","extensionVersion":"0.2.1","piVersion":"0.82.1","instanceId":"instance-live","pid":42,"sessionId":"session-live","reason":"startup","cwd":"/tmp/project","modelProvider":"openai-codex","modelId":"gpt-5.4-mini","thinking":"low"}
+        {"type":"register","protocol":1,"generation":"\(descriptor.generation.uuidString)","secret":"\(descriptor.authenticationSecret)","extensionVersion":"0.2.1","piVersion":"0.82.1","instanceId":"instance-live","pid":42,"sessionId":"session-live","reason":"startup","cwd":"/tmp/project","modelProvider":"openai-codex","modelId":"gpt-5.4-mini","thinking":"low","isIdle":true\(outcomeField)}
         """
         try writeLine(frame, to: socketDescriptor)
         return (socketDescriptor, try readLine(from: socketDescriptor))

@@ -35,6 +35,28 @@ type Command = {
 	level?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 };
 
+export type RunOutcome = "completed" | "interrupted" | "failed" | "unknown";
+
+export function runOutcomeFromMessages(messages: readonly unknown[]): RunOutcome {
+	const assistant = [...messages].reverse().find(
+		(message) =>
+			typeof message === "object" &&
+			message !== null &&
+			(message as { role?: unknown }).role === "assistant",
+	) as { stopReason?: unknown } | undefined;
+	switch (assistant?.stopReason) {
+		case "stop":
+			return "completed";
+		case "aborted":
+			return "interrupted";
+		case "error":
+		case "length":
+			return "failed";
+		default:
+			return "unknown";
+	}
+}
+
 const runtimeDescriptorPath =
 	process.env.CONN_PI_RUNTIME_DESCRIPTOR ??
 	join(homedir(), "Library", "Application Support", "Conn", "pi-runtime", "runtime.json");
@@ -147,6 +169,8 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 	let activitySequence = 0;
 	let detectedPiVersion: string | undefined;
 	let versionDetectionAttempted = false;
+	let pendingRunOutcome: RunOutcome | undefined;
+	let lastSettledOutcome: RunOutcome | undefined;
 
 	const state = () => ({
 		sessionId: context?.sessionManager.getSessionId() ?? null,
@@ -289,6 +313,7 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 				modelId: context?.model?.id ?? "unknown",
 				thinking: pi.getThinkingLevel(),
 				isIdle: context?.isIdle() ?? true,
+				outcome: lastSettledOutcome,
 			});
 		});
 		candidate.on("data", (chunk) => {
@@ -407,11 +432,33 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 		queueMicrotask(() => void connectBroker());
 	});
 	pi.on("session_info_changed", observe("session_info_changed"));
-	pi.on("agent_start", observe("agent_start"));
+	pi.on("agent_start", (_event, ctx) => {
+		pendingRunOutcome = undefined;
+		lastSettledOutcome = undefined;
+		context = ctx;
+		lastEvent = "agent_start";
+		send({ type: "event", event: lastEvent, state: state() });
+	});
 	pi.on("turn_start", observe("turn_start"));
 	pi.on("turn_end", observe("turn_end"));
-	pi.on("agent_end", observe("agent_end"));
-	pi.on("agent_settled", observe("agent_settled"));
+	pi.on("agent_end", (event, ctx) => {
+		pendingRunOutcome = runOutcomeFromMessages(event.messages);
+		context = ctx;
+		lastEvent = "agent_end";
+		send({ type: "event", event: lastEvent, state: state() });
+	});
+	pi.on("agent_settled", (_event, ctx) => {
+		context = ctx;
+		lastEvent = "agent_settled";
+		lastSettledOutcome = pendingRunOutcome ?? "unknown";
+		send({
+			type: "event",
+			event: lastEvent,
+			state: state(),
+			outcome: lastSettledOutcome,
+		});
+		pendingRunOutcome = undefined;
+	});
 	pi.on("model_select", observe("model_select"));
 	pi.on("thinking_level_select", observe("thinking_level_select"));
 	pi.on("message_end", (event, ctx) => {

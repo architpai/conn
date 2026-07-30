@@ -30,6 +30,7 @@ public struct PiBridgeHandshake: Equatable, Sendable {
     public let modelID: String
     public let thinkingLevel: String
     public let isIdle: Bool?
+    public let outcome: PiBridgeRunOutcome?
 }
 
 public enum PiBrokerHandshakeDecoder {
@@ -94,7 +95,8 @@ public enum PiBrokerHandshakeDecoder {
             modelProvider: frame.modelProvider,
             modelID: frame.modelID,
             thinkingLevel: frame.thinking,
-            isIdle: frame.isIdle
+            isIdle: frame.isIdle,
+            outcome: frame.outcome
         )
     }
 
@@ -141,6 +143,7 @@ private struct WireHandshake: Decodable {
     let modelID: String
     let thinking: String
     let isIdle: Bool?
+    let outcome: PiBridgeRunOutcome?
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -159,6 +162,7 @@ private struct WireHandshake: Decodable {
         case modelID = "modelId"
         case thinking
         case isIdle
+        case outcome
     }
 }
 
@@ -210,6 +214,14 @@ public struct PiBridgeEventFrame: Equatable, Sendable {
     public let event: String
     public let state: PiBridgeState
     public let activity: PiBridgeActivity?
+    public let outcome: PiBridgeRunOutcome?
+}
+
+public enum PiBridgeRunOutcome: String, Codable, Equatable, Sendable {
+    case completed
+    case interrupted
+    case failed
+    case unknown
 }
 
 public struct PiBridgeActivity: Codable, Equatable, Sendable {
@@ -271,7 +283,8 @@ public enum PiBrokerMessageDecoder {
                 return .event(.init(
                     event: wire.event,
                     state: wire.state,
-                    activity: wire.activity
+                    activity: wire.activity,
+                    outcome: wire.outcome
                 ))
             case "response":
                 let wire = try decoder.decode(WireResponse.self, from: data)
@@ -377,6 +390,7 @@ private struct WireEvent: Decodable {
     let event: String
     let state: PiBridgeState
     let activity: PiBridgeActivity?
+    let outcome: PiBridgeRunOutcome?
 }
 
 private struct WireResponse: Decodable {

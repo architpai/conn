@@ -32,7 +32,8 @@ enum PiExternalIntegrationTestCases {
             )
             let client = try PiLocalBrokerTestCases.openRegisteredClient(
                 socketURL: socketURL,
-                descriptor: runtime
+                descriptor: runtime,
+                outcome: .completed
             )
             var iterator = feed.updates.makeAsyncIterator()
             guard let registrationUpdate = await iterator.next(),
@@ -44,8 +45,9 @@ enum PiExternalIntegrationTestCases {
             }
             suite.check(
                 session.id.upstreamID.rawValue == "session-live"
-                    && session.origin == .external,
-                "Pi Session identity and external ownership map neutrally"
+                    && session.origin == .external
+                    && session.status == .completed,
+                "Pi reconnection preserves Session identity, ownership, and settled outcome"
             )
 
             try PiLocalBrokerTestCases.writeLine(
@@ -145,6 +147,114 @@ enum PiExternalIntegrationTestCases {
                     && secondActivitySession.activities.map(\.id.rawValue)
                         == ["custom-tool-1", "activity-1", "activity-2"],
                 "successive Pi state updates retain bounded Session activity history"
+            )
+
+            try PiLocalBrokerTestCases.writeLine(
+                """
+                {"type":"event","event":"agent_end","state":\(stateJSON(isIdle: true, lastEvent: "agent_end"))}
+                """,
+                to: client.descriptor
+            )
+            guard let agentEndUpdate = await iterator.next(),
+                  case let .sessionUpsert(agentEndSession) = agentEndUpdate.update else {
+                suite.fail("low-level Pi agent end must upsert the Session")
+                Darwin.close(client.descriptor)
+                await integration.disconnect()
+                return
+            }
+            suite.check(
+                agentEndSession.status == .working
+                    && agentEndSession.runs.last?.status == .inProgress,
+                "low-level agent end waits for fully settled Pi outcome"
+            )
+
+            try PiLocalBrokerTestCases.writeLine(
+                """
+                {"type":"event","event":"agent_settled","outcome":"completed","state":\(stateJSON(isIdle: true, lastEvent: "agent_settled"))}
+                """,
+                to: client.descriptor
+            )
+            guard let settledUpdate = await iterator.next(),
+                  case let .sessionUpsert(settledSession) = settledUpdate.update else {
+                suite.fail("settled Pi lifecycle state must upsert the Session")
+                Darwin.close(client.descriptor)
+                await integration.disconnect()
+                return
+            }
+            suite.check(
+                settledSession.status == .completed
+                    && settledSession.runs.last?.status == .completed,
+                "a fully settled Pi agent marks its Conn Session completed"
+            )
+
+            try PiLocalBrokerTestCases.writeLine(
+                """
+                {"type":"event","event":"model_select","state":\(stateJSON(isIdle: true, lastEvent: "model_select"))}
+                """,
+                to: client.descriptor
+            )
+            guard let metadataUpdate = await iterator.next(),
+                  case let .sessionUpsert(metadataSession) = metadataUpdate.update else {
+                suite.fail("Pi metadata state must upsert the Session")
+                Darwin.close(client.descriptor)
+                await integration.disconnect()
+                return
+            }
+            suite.check(
+                metadataSession.status == .completed,
+                "idle Pi metadata events preserve the terminal Session status"
+            )
+
+            try PiLocalBrokerTestCases.writeLine(
+                """
+                {"type":"event","event":"agent_start","state":\(stateJSON(isIdle: false, lastEvent: "agent_start"))}
+                """,
+                to: client.descriptor
+            )
+            _ = await iterator.next()
+            try PiLocalBrokerTestCases.writeLine(
+                """
+                {"type":"event","event":"agent_settled","outcome":"interrupted","state":\(stateJSON(isIdle: true, lastEvent: "agent_settled"))}
+                """,
+                to: client.descriptor
+            )
+            guard let interruptedUpdate = await iterator.next(),
+                  case let .sessionUpsert(interruptedSession) = interruptedUpdate.update else {
+                suite.fail("interrupted Pi outcome must upsert the Session")
+                Darwin.close(client.descriptor)
+                await integration.disconnect()
+                return
+            }
+            suite.check(
+                interruptedSession.status == .idle
+                    && interruptedSession.runs.last?.status == .interrupted,
+                "an aborted settled Pi run maps to interrupted without claiming completion"
+            )
+
+            try PiLocalBrokerTestCases.writeLine(
+                """
+                {"type":"event","event":"agent_start","state":\(stateJSON(isIdle: false, lastEvent: "agent_start"))}
+                """,
+                to: client.descriptor
+            )
+            _ = await iterator.next()
+            try PiLocalBrokerTestCases.writeLine(
+                """
+                {"type":"event","event":"agent_settled","outcome":"failed","state":\(stateJSON(isIdle: true, lastEvent: "agent_settled"))}
+                """,
+                to: client.descriptor
+            )
+            guard let failedUpdate = await iterator.next(),
+                  case let .sessionUpsert(failedSession) = failedUpdate.update else {
+                suite.fail("failed Pi outcome must upsert the Session")
+                Darwin.close(client.descriptor)
+                await integration.disconnect()
+                return
+            }
+            suite.check(
+                failedSession.status == .failed
+                    && failedSession.runs.last?.status == .failed,
+                "an errored settled Pi run maps to failed"
             )
 
             Darwin.close(client.descriptor)

@@ -122,12 +122,19 @@ public actor PiExternalIntegration: ConnIntegration {
                             observedAt: now,
                             update: .sessionUpsert(mapped)
                         ))
-                    case let .stateChanged(sessionID, state, event, activity):
+                    case let .stateChanged(
+                        sessionID,
+                        state,
+                        event,
+                        activity,
+                        outcome
+                    ):
                         let mapped = Self.session(
                             sessionID: sessionID,
                             state: state,
                             event: event,
                             activity: activity,
+                            outcome: outcome,
                             previous: sessionsByUpstreamID[sessionID],
                             observedAt: now
                         )
@@ -271,6 +278,15 @@ public actor PiExternalIntegration: ConnIntegration {
         let runs = handshake.isIdle == false
             ? [ConnRun(id: runID, status: .inProgress, startedAt: observedAt)]
             : []
+        let status: ConnSessionStatus = if handshake.isIdle == false {
+            .working
+        } else {
+            switch handshake.outcome {
+            case .completed: .completed
+            case .failed: .failed
+            case .interrupted, .unknown, nil: .idle
+            }
+        }
         return .init(
             id: .init(
                 integrationID: PiExternalIntegrationIdentity.integrationID,
@@ -280,7 +296,7 @@ public actor PiExternalIntegration: ConnIntegration {
             workspace: .init(canonicalPath: handshake.workspace),
             origin: .external,
             retention: .persistent,
-            status: handshake.isIdle == true ? .idle : .working,
+            status: status,
             runs: runs,
             updatedAt: observedAt
         )
@@ -298,6 +314,7 @@ public actor PiExternalIntegration: ConnIntegration {
         state: PiBridgeState,
         event: String,
         activity: PiBridgeActivity?,
+        outcome: PiBridgeRunOutcome?,
         previous: ConnSession?,
         observedAt: Date
     ) -> ConnSession {
@@ -306,17 +323,25 @@ public actor PiExternalIntegration: ConnIntegration {
             rawValue: "pi-run-\(sessionID)-\(Int(observedAt.timeIntervalSince1970 * 1_000))"
         )
         let runs: [ConnRun]
-        if state.isIdle {
+        if state.isIdle, let outcome {
+            let terminalRunStatus: ConnRunStatus = switch outcome {
+            case .interrupted: .interrupted
+            case .failed: .failed
+            case .unknown: .unknown
+            case .completed: .completed
+            }
             runs = (previous?.runs ?? []).map {
                 guard $0.status == .inProgress else { return $0 }
                 return ConnRun(
                     id: $0.id,
-                    status: .completed,
+                    status: terminalRunStatus,
                     startedAt: $0.startedAt,
                     completedAt: observedAt
                 )
             }
         } else if priorActiveRun != nil {
+            runs = previous?.runs ?? []
+        } else if state.isIdle {
             runs = previous?.runs ?? []
         } else {
             runs = (previous?.runs ?? []) + [
@@ -346,6 +371,24 @@ public actor PiExternalIntegration: ConnIntegration {
                 observedAt: observedAt
             ))
         }
+        let status: ConnSessionStatus
+        if !state.isIdle {
+            status = .working
+        } else {
+            status = switch outcome {
+            case .completed: .completed
+            case .failed: .failed
+            case .interrupted: .idle
+            case .unknown: .idle
+            case nil:
+                switch previous?.status {
+                case .completed: .completed
+                case .failed: .failed
+                case .working: .working
+                default: .idle
+                }
+            }
+        }
         return .init(
             id: .init(
                 integrationID: PiExternalIntegrationIdentity.integrationID,
@@ -355,7 +398,7 @@ public actor PiExternalIntegration: ConnIntegration {
             workspace: .init(canonicalPath: state.workspace),
             origin: .external,
             retention: .persistent,
-            status: state.isIdle ? .idle : .working,
+            status: status,
             runs: runs,
             activities: activities,
             issues: previous?.issues ?? [],

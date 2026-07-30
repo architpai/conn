@@ -6,6 +6,7 @@ import connPiExtension, {
 	parsePiPackageVersion,
 	parseRuntimeDescriptor,
 	reconnectDelay,
+	runOutcomeFromMessages,
 } from "../../../Sources/ConnPiAdapter/Resources/PiExtension/index.ts";
 
 const now = 2_000_000_000_000;
@@ -75,4 +76,27 @@ test("the extension registers no custom tools or tool-call interception", () => 
 
 	assert.equal(registeredTools, 0);
 	assert.equal(events.includes("tool_call"), false);
+});
+
+test("projects only bounded terminal outcomes from Pi assistant messages", () => {
+	assert.equal(
+		runOutcomeFromMessages([{ role: "assistant", stopReason: "stop" }]),
+		"completed",
+	);
+	assert.equal(
+		runOutcomeFromMessages([{ role: "assistant", stopReason: "aborted" }]),
+		"interrupted",
+	);
+	assert.equal(
+		runOutcomeFromMessages([{ role: "assistant", stopReason: "error" }]),
+		"failed",
+	);
+	assert.equal(
+		runOutcomeFromMessages([{ role: "assistant", stopReason: "length" }]),
+		"failed",
+	);
+	assert.equal(
+		runOutcomeFromMessages([{ role: "assistant", stopReason: "toolUse" }]),
+		"unknown",
+	);
 });

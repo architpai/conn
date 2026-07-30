@@ -20,7 +20,8 @@ public enum PiLocalBrokerEvent: Equatable, Sendable {
         sessionID: String,
         state: PiBridgeState,
         event: String,
-        activity: PiBridgeActivity?
+        activity: PiBridgeActivity?,
+        outcome: PiBridgeRunOutcome?
     )
     case disconnected(sessionID: String, instanceID: String)
 }
@@ -236,7 +237,8 @@ public actor PiLocalBroker {
                         sessionID: event.state.sessionID,
                         state: event.state,
                         event: event.event,
-                        activity: event.activity
+                        activity: event.activity,
+                        outcome: event.outcome
                     ))
                 case let .response(response):
                     latestStateByClient[clientID] = response.state

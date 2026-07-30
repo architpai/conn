@@ -18,7 +18,7 @@ enum PiBrokerHandshakeTestCases {
     ) {
         let data = Data(
             """
-            {"type":"register","protocol":1,"generation":"\(generation.uuidString)","secret":"test-secret","extensionVersion":"0.2.1","piVersion":"0.82.1","instanceId":"instance-1","pid":42,"sessionId":"session-1","reason":"startup","cwd":"/tmp/project","modelProvider":"openai-codex","modelId":"gpt-5.4-mini","thinking":"low"}
+            {"type":"register","protocol":1,"generation":"\(generation.uuidString)","secret":"test-secret","extensionVersion":"0.2.1","piVersion":"0.82.1","instanceId":"instance-1","pid":42,"sessionId":"session-1","reason":"startup","cwd":"/tmp/project","modelProvider":"openai-codex","modelId":"gpt-5.4-mini","thinking":"low","isIdle":true,"outcome":"completed"}
             """.utf8
         )
         do {
@@ -30,6 +30,10 @@ enum PiBrokerHandshakeTestCases {
             suite.check(handshake.sessionID == "session-1", "Session identity decodes exactly")
             suite.check(handshake.processID == 42, "PID remains diagnostic evidence")
             suite.check(handshake.workspace == "/tmp/project", "Workspace decodes exactly")
+            suite.check(
+                handshake.outcome == .completed,
+                "reconnection handshake preserves the bounded settled outcome"
+            )
         } catch {
             suite.fail("valid Pi handshake was rejected: \(error)")
         }
@@ -102,6 +106,35 @@ enum PiBrokerHandshakeTestCases {
             suite.check(response.state.isIdle, "effective Pi state accompanies acknowledgement")
         } catch {
             suite.fail("valid response frame failed to decode: \(error)")
+        }
+
+        let eventData = Data(
+            #"{"type":"event","event":"agent_settled","outcome":"completed","state":{"sessionId":"session-1","sessionName":"Work","cwd":"/tmp/project","isIdle":true,"hasPendingMessages":false,"lastEvent":"agent_settled","activeToolCount":0,"modelProvider":"openai-codex","modelId":"gpt-5.4-mini","modelName":"GPT-5.4 mini","thinking":"low"}}"#.utf8
+        )
+        do {
+            guard case let .event(event) = try PiBrokerMessageDecoder.decode(eventData)
+            else {
+                suite.fail("settled event frame must keep its closed discriminator")
+                return
+            }
+            suite.check(
+                event.outcome == .completed,
+                "settled event decodes only the bounded run outcome"
+            )
+        } catch {
+            suite.fail("valid settled event frame failed to decode: \(error)")
+        }
+
+        let unsupportedOutcome = Data(
+            #"{"type":"event","event":"agent_settled","outcome":"future","state":{"sessionId":"session-1","sessionName":"Work","cwd":"/tmp/project","isIdle":true,"hasPendingMessages":false,"lastEvent":"agent_settled","activeToolCount":0,"modelProvider":"openai-codex","modelId":"gpt-5.4-mini","modelName":"GPT-5.4 mini","thinking":"low"}}"#.utf8
+        )
+        do {
+            _ = try PiBrokerMessageDecoder.decode(unsupportedOutcome)
+            suite.fail("unknown Pi run outcomes must fail closed")
+        } catch PiBrokerProtocolError.malformedFrame {
+            suite.check(true, "unknown Pi run outcome failed closed")
+        } catch {
+            suite.fail("unknown Pi run outcome returned the wrong error: \(error)")
         }
     }
 
