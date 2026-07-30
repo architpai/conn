@@ -332,11 +332,27 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                 composer(session)
             }
         } else {
-            ContentUnavailableView(
-                "No Sessions",
-                systemImage: "rectangle.stack",
-                description: Text("Conn is waiting for a qualified Integration.")
-            )
+            VStack(spacing: 14) {
+                ContentUnavailableView(
+                    model.integrations.isEmpty
+                        ? "No Integrations Enabled"
+                        : "No Sessions",
+                    systemImage: model.integrations.isEmpty
+                        ? "switch.2"
+                        : "rectangle.stack",
+                    description: Text(
+                        model.integrations.isEmpty
+                            ? "Choose Codex, Pi, or both in Settings."
+                            : "Conn is waiting for a qualified Integration."
+                    )
+                )
+                if model.integrations.isEmpty {
+                    Button("Choose Integrations") {
+                        model.showsSettings = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

@@ -674,7 +674,7 @@ public final class ConnViewModel: ObservableObject {
             presentCompactNotification(batch)
         }
         integrationError = value.integrations.isEmpty
-            ? "No Integration is installed"
+            ? "No integrations enabled"
             : nil
     }
 

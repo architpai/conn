@@ -8,6 +8,7 @@ final class PiIntegrationSettingsModel: ObservableObject {
     static let enabledKey = "pi.external.enabled.v1"
 
     @Published private(set) var installStatus: PiExtensionInstallStatus
+    @Published private(set) var enabled: Bool
     @Published private(set) var isWorking = false
     @Published private(set) var issue: String?
     @Published private(set) var notice: String?
@@ -18,23 +19,26 @@ final class PiIntegrationSettingsModel: ObservableObject {
     private let coordinator: ConnIntegrationCoordinator
     private let installer: PiExtensionInstaller
     private let discovery: PiToolchainDiscovery
+    private let activationPreference: ConnIntegrationActivationPreference
     private var task: Task<Void, Never>?
 
     init(
         integration: PiExternalIntegration,
         coordinator: ConnIntegrationCoordinator,
         installer: PiExtensionInstaller = .userDefault(),
-        discovery: PiToolchainDiscovery = .init()
+        discovery: PiToolchainDiscovery = .init(),
+        defaults: UserDefaults = .standard
     ) {
         self.integration = integration
         self.coordinator = coordinator
         self.installer = installer
         self.discovery = discovery
+        self.activationPreference = .init(
+            defaults: defaults,
+            key: Self.enabledKey
+        )
         self.installStatus = installer.status()
-    }
-
-    var enabled: Bool {
-        UserDefaults.standard.bool(forKey: Self.enabledKey)
+        self.enabled = activationPreference.resolve(defaultWhenAbsent: false)
     }
 
     var statusLabel: String {
@@ -71,10 +75,12 @@ final class PiIntegrationSettingsModel: ObservableObject {
                 "Pi \(toolchain.piVersion) · Node \(toolchain.nodeVersion)"
             do {
                 _ = try model.installer.install()
-                UserDefaults.standard.set(true, forKey: Self.enabledKey)
+                model.activationPreference.setEnabled(true)
+                model.enabled = true
                 await model.integration.setEnabled(true)
-                await model.coordinator.refresh(
-                    PiExternalIntegrationIdentity.integrationID
+                await model.coordinator.setEnabled(
+                    PiExternalIntegrationIdentity.integrationID,
+                    true
                 )
                 model.installStatus = model.installer.status()
                 model.notice =
@@ -88,10 +94,12 @@ final class PiIntegrationSettingsModel: ObservableObject {
 
     func disable() {
         run { model in
-            UserDefaults.standard.set(false, forKey: Self.enabledKey)
+            model.activationPreference.setEnabled(false)
+            model.enabled = false
             await model.integration.setEnabled(false)
-            await model.coordinator.refresh(
-                PiExternalIntegrationIdentity.integrationID
+            await model.coordinator.setEnabled(
+                PiExternalIntegrationIdentity.integrationID,
+                false
             )
             model.installStatus = model.installer.status()
             model.notice =
@@ -101,10 +109,12 @@ final class PiIntegrationSettingsModel: ObservableObject {
 
     func uninstall() {
         run { model in
-            UserDefaults.standard.set(false, forKey: Self.enabledKey)
+            model.activationPreference.setEnabled(false)
+            model.enabled = false
             await model.integration.setEnabled(false)
-            await model.coordinator.refresh(
-                PiExternalIntegrationIdentity.integrationID
+            await model.coordinator.setEnabled(
+                PiExternalIntegrationIdentity.integrationID,
+                false
             )
             do {
                 _ = try model.installer.uninstall()

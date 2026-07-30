@@ -83,6 +83,19 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             let store = try ConnProjectionCheckpointFileStore.userDefault()
+            let defaults = UserDefaults.standard
+            let hadPriorConnState = Self.hadPriorConnState(
+                defaults: defaults,
+                checkpointStore: store
+            )
+            let codexEnabled = ConnIntegrationActivationPreference(
+                defaults: defaults,
+                key: CodexIntegrationSettingsModel.enabledKey
+            ).resolve(defaultWhenAbsent: hadPriorConnState)
+            let piEnabled = ConnIntegrationActivationPreference(
+                defaults: defaults,
+                key: PiIntegrationSettingsModel.enabledKey
+            ).resolve(defaultWhenAbsent: false)
             // The old projection is disposable migration evidence. It never
             // enters the neutral decoder or v0.2 outcome baseline.
             _ = AppServerDomainCheckpointFileStore.quarantineUserDefaultCache()
@@ -100,12 +113,22 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
                 legacyHookRetirement: Self.retireLegacyHooks
             )
             let pi = PiExternalIntegration.userDefault(
-                enabled: UserDefaults.standard.bool(
-                    forKey: PiIntegrationSettingsModel.enabledKey
-                )
+                enabled: piEnabled
             )
+            var enabledIntegrationIDs: Set<IntegrationID> = []
+            if codexEnabled {
+                enabledIntegrationIDs.insert(
+                    CodexIntegrationIdentity.integrationID
+                )
+            }
+            if piEnabled {
+                enabledIntegrationIDs.insert(
+                    PiExternalIntegrationIdentity.integrationID
+                )
+            }
             let coordinator = try ConnIntegrationCoordinator(
                 integrations: [codex, pi],
+                enabledIntegrationIDs: enabledIntegrationIDs,
                 checkpointStore: store
             )
             var harnessAssets = Self.registerCodexHarnessAsset().map {
@@ -136,7 +159,10 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
                 harnessAssets: harnessAssets,
                 sessionOpener: sessionOpener
             )
-            let settingsModel = CodexIntegrationSettingsModel(integration: codex)
+            let settingsModel = CodexIntegrationSettingsModel(
+                integration: codex,
+                coordinator: coordinator
+            )
             let piSettingsModel = PiIntegrationSettingsModel(
                 integration: pi,
                 coordinator: coordinator
@@ -285,6 +311,17 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
         let image = highResolutionOpenAIMark(applicationURL: applicationURL)
             ?? NSWorkspace.shared.icon(forFile: applicationURL.path)
         return image.setName(assetName) ? assetName : nil
+    }
+
+    private static func hadPriorConnState(
+        defaults: UserDefaults,
+        checkpointStore: ConnProjectionCheckpointFileStore
+    ) -> Bool {
+        let hasPersistedPreferences = Bundle.main.bundleIdentifier.flatMap {
+            defaults.persistentDomain(forName: $0)
+        }?.isEmpty == false
+        let hasPersistedProjection = (try? checkpointStore.load()) != nil
+        return hasPersistedPreferences || hasPersistedProjection
     }
 
     private static func registerPiHarnessAsset() -> String? {

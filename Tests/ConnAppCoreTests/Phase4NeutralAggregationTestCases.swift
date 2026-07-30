@@ -13,12 +13,153 @@ enum Phase4NeutralAggregationTestCases {
     private static let baseDate = Date(timeIntervalSince1970: 1_860_000_000)
 
     static func run(into suite: inout TestSuite) async throws {
+        try await integrationActivationIsExplicitAndReversible(into: &suite)
+        integrationActivationPreferencePreservesExplicitChoice(into: &suite)
         try await simultaneousIntegrationsRemainIsolated(into: &suite)
         try await restoredStateIsNonActionable(into: &suite)
         try twoSlotStoreRecoversLastValidGeneration(into: &suite)
         neutralPresentationPoliciesUseOnlySemanticState(into: &suite)
         historicalCompletedActivitiesLoadedLaterStaySilent(into: &suite)
         completedRunsCompressAroundTheirFullAnswer(into: &suite)
+    }
+
+    private static func integrationActivationIsExplicitAndReversible(
+        into suite: inout TestSuite
+    ) async throws {
+        let sessionID = ConnSessionID(
+            integrationID: codexID,
+            upstreamID: .init(rawValue: "activation-session")
+        )
+        let descriptor = IntegrationDescriptor(
+            id: codexID,
+            harnessID: .init(rawValue: "openai"),
+            displayName: "Codex"
+        )
+        let integration = ControlledIntegration(
+            descriptor: descriptor,
+            snapshot: .init(
+                integration: descriptor,
+                generation: generation,
+                throughSequence: 0,
+                inventoryAuthority: .complete,
+                capabilities: .init(canMonitor: true, actions: [.followUp]),
+                sessions: [.init(
+                    id: sessionID,
+                    title: "Activation Session",
+                    status: .idle,
+                    updatedAt: at(1)
+                )],
+                observedAt: at(1)
+            ),
+            actionOutcome: .accepted
+        )
+        let coordinator = try ConnIntegrationCoordinator(
+            integrations: [integration],
+            enabledIntegrationIDs: [],
+            retryDelay: .seconds(60)
+        )
+        await coordinator.start()
+        defer { Task { await coordinator.stop() } }
+
+        let initiallyDisabledSnapshot = await coordinator.snapshot()
+        suite.check(
+            initiallyDisabledSnapshot.integrations.isEmpty,
+            "registered Integrations stay hidden until explicitly enabled"
+        )
+        let disabledEstablishmentCount = await integration.establishmentCount()
+        suite.checkEqual(
+            disabledEstablishmentCount,
+            0,
+            "disabled Integrations do not establish background feeds"
+        )
+
+        await coordinator.setEnabled(codexID, true)
+        try await waitUntil {
+            await coordinator.snapshot().integrations.first?.freshness == .live
+        }
+        let enabledSnapshot = await coordinator.snapshot()
+        suite.checkEqual(
+            enabledSnapshot.sessions.map(\.id),
+            [sessionID],
+            "enabling publishes only that Integration's qualified Sessions"
+        )
+        let enabledEstablishmentCount = await integration.establishmentCount()
+        suite.checkEqual(
+            enabledEstablishmentCount,
+            1,
+            "enabling establishes the Integration feed once"
+        )
+
+        await coordinator.setEnabled(codexID, false)
+        let disabledSnapshot = await coordinator.snapshot()
+        suite.check(
+            disabledSnapshot.integrations.isEmpty
+                && disabledSnapshot.sessions.isEmpty,
+            "disabling immediately removes the Integration and its Sessions"
+        )
+        let disconnectionCount = await integration.disconnectionCount()
+        suite.checkEqual(
+            disconnectionCount,
+            1,
+            "disabling disconnects Conn without controlling Harness work"
+        )
+        let refused = await coordinator.perform(.followUp(
+            sessionID: sessionID,
+            text: try ConnActionText("must not dispatch")
+        ))
+        suite.checkEqual(
+            refused.kind,
+            .unavailable,
+            "disabled Integration actions fail before provider dispatch"
+        )
+
+        await coordinator.setEnabled(codexID, true)
+        try await waitUntil {
+            await coordinator.snapshot().integrations.first?.freshness == .live
+        }
+        let reenabledSnapshot = await coordinator.snapshot()
+        let reenabledEstablishmentCount = await integration.establishmentCount()
+        suite.checkEqual(
+            reenabledSnapshot.sessions.map(\.id),
+            [sessionID],
+            "re-enabling reuses the registered Integration without reinstalling it"
+        )
+        suite.checkEqual(
+            reenabledEstablishmentCount,
+            2,
+            "re-enabling establishes one fresh feed"
+        )
+    }
+
+    private static func integrationActivationPreferencePreservesExplicitChoice(
+        into suite: inout TestSuite
+    ) {
+        let suiteName = "conn-activation-preferences-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            suite.check(false, "isolated activation UserDefaults suite is available")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let key = "integration.fixture.enabled.v1"
+        let preference = ConnIntegrationActivationPreference(
+            defaults: defaults,
+            key: key
+        )
+
+        suite.check(
+            !preference.resolve(defaultWhenAbsent: false),
+            "fresh-install Integration activation defaults off"
+        )
+        defaults.removeObject(forKey: key)
+        suite.check(
+            preference.resolve(defaultWhenAbsent: true),
+            "legacy-install migration can preserve prior activation"
+        )
+        defaults.set(false, forKey: key)
+        suite.check(
+            !preference.resolve(defaultWhenAbsent: true),
+            "an explicit disabled choice wins over migration defaults"
+        )
     }
 
     private static func historicalCompletedActivitiesLoadedLaterStaySilent(
@@ -1058,6 +1199,8 @@ private actor ControlledIntegration: ConnIntegration {
     private let actionOutcome: ConnActionOutcomeKind
     private var continuation: AsyncStream<IntegrationUpdate>.Continuation?
     private var performedActions: [ConnAction] = []
+    private var establishments = 0
+    private var disconnections = 0
 
     init(
         descriptor: IntegrationDescriptor,
@@ -1070,6 +1213,7 @@ private actor ControlledIntegration: ConnIntegration {
     }
 
     func establishFeed() async throws(ConnIntegrationError) -> ConnIntegrationFeed {
+        establishments += 1
         let pair = AsyncStream<IntegrationUpdate>.makeStream(
             bufferingPolicy: .bufferingNewest(32)
         )
@@ -1102,6 +1246,20 @@ private actor ControlledIntegration: ConnIntegration {
 
     func performedActionCount() -> Int {
         performedActions.count
+    }
+
+    func establishmentCount() -> Int {
+        establishments
+    }
+
+    func disconnectionCount() -> Int {
+        disconnections
+    }
+
+    func disconnect() {
+        disconnections += 1
+        continuation?.finish()
+        continuation = nil
     }
 }
 

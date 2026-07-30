@@ -606,7 +606,9 @@ The Codex-only settings content becomes a composed Conn Settings view in
 1. **Conn startup**
    - Launch Conn at login
 2. **Codex**
-   - existing built-in Integration and Shared Desktop Labs unchanged
+   - explicit Enable/Disable control
+   - built-in setup on first enable
+   - optional Shared Desktop Labs remains a separate capability
 3. **Pi**
    - Pi discovery/version
    - Enable Pi monitoring
@@ -617,6 +619,27 @@ The Codex-only settings content becomes a composed Conn Settings view in
    - Update
    - Disable
    - Uninstall
+
+Fresh installs begin with both Integrations off. The user may enable Codex,
+Pi, both, or neither. First-time enablement is atomic: Codex enables its
+built-in supervision, while Pi qualifies the toolchain, obtains consent,
+installs the extension, and enables supervision. A failed Pi setup never
+leaves Pi marked enabled; Codex readiness remains visible through the normal
+Integration freshness state after the built-in supervisor starts.
+
+Disabling an Integration disconnects Conn and immediately removes that
+Integration's Sessions from the presentation. It never stops Harness work,
+uninstalls an extension, or removes Shared Desktop setup. Re-enabling reuses
+the preserved setup. Uninstall and repair remain distinct secondary actions.
+
+For the v0.2 to v0.2.1 migration, an absent Codex activation preference maps
+to enabled only when prior Conn preferences or a prior neutral projection are
+present. This preserves existing Codex supervision. On a genuinely fresh
+install the absent preference resolves to off. Once written, the user's
+explicit choice always wins over migration inference.
+
+When neither Integration is enabled, Conn presents an honest empty state with
+a direct `Choose Integrations` action that opens Settings.
 
 The launch-at-login control is global Conn behavior and moves out of the
 Codex-named settings model. Pi does not require launch at login; enabling it

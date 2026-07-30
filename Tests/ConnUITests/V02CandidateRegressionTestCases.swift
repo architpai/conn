@@ -334,6 +334,34 @@ enum V02CandidateRegressionTestCases {
             let integration = NewSessionModelCountingIntegration()
             let coordinator = try ConnIntegrationCoordinator(
                 integrations: [integration],
+                enabledIntegrationIDs: []
+            )
+            let model = ConnViewModel(coordinator: coordinator)
+            model.start()
+            defer { model.stop() }
+            for _ in 0..<100 where model.integrationError == nil {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            suite.checkEqual(
+                model.integrationError,
+                "No integrations enabled",
+                "registered but disabled providers produce the actionable empty state"
+            )
+            suite.check(
+                model.integrations.isEmpty && model.sessions.isEmpty,
+                "disabled providers expose neither inventory nor stale Session rows"
+            )
+        } catch {
+            suite.recordUnexpected(
+                error,
+                context: "verifying the zero-provider presentation"
+            )
+        }
+
+        do {
+            let integration = NewSessionModelCountingIntegration()
+            let coordinator = try ConnIntegrationCoordinator(
+                integrations: [integration],
                 retryDelay: .seconds(60)
             )
             let model = ConnViewModel(coordinator: coordinator)

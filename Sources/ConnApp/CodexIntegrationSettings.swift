@@ -4,6 +4,10 @@ import ConnCodexAdapter
 
 @MainActor
 final class CodexIntegrationSettingsModel: ObservableObject {
+    static let enabledKey = "codex.integration.enabled.v1"
+
+    @Published private(set) var enabled: Bool
+    @Published private(set) var providerNotice: String?
     @Published var labsEnabled: Bool {
         didSet {
             UserDefaults.standard.set(labsEnabled, forKey: Self.labsKey)
@@ -26,17 +30,58 @@ final class CodexIntegrationSettingsModel: ObservableObject {
     private let diagnosticsCoordinator = SharedDesktopDiagnosticsCoordinator()
     private let setupCoordinator = SharedDesktopSetupCoordinator()
     private let integration: CodexIntegration
+    private let coordinator: ConnIntegrationCoordinator
+    private let activationPreference: ConnIntegrationActivationPreference
     private let launchAtLogin: ConnLaunchAtLoginController
     private var task: Task<Void, Never>?
 
     init(
         integration: CodexIntegration,
+        coordinator: ConnIntegrationCoordinator,
+        defaults: UserDefaults = .standard,
         launchAtLogin: ConnLaunchAtLoginController = .init()
     ) {
         self.integration = integration
+        self.coordinator = coordinator
+        self.activationPreference = .init(
+            defaults: defaults,
+            key: Self.enabledKey
+        )
         self.launchAtLogin = launchAtLogin
         launchAtLoginStatus = launchAtLogin.status
-        labsEnabled = UserDefaults.standard.bool(forKey: Self.labsKey)
+        enabled = activationPreference.resolve(defaultWhenAbsent: false)
+        providerNotice = nil
+        labsEnabled = defaults.bool(forKey: Self.labsKey)
+    }
+
+    var statusLabel: String {
+        enabled ? "Enabled" : "Off"
+    }
+
+    func enable() {
+        run { model in
+            model.activationPreference.setEnabled(true)
+            model.enabled = true
+            await model.coordinator.setEnabled(
+                CodexIntegrationIdentity.integrationID,
+                true
+            )
+            model.providerNotice =
+                "Codex supervision is enabled. Conn will not launch or stop Codex Sessions."
+        }
+    }
+
+    func disable() {
+        run { model in
+            model.activationPreference.setEnabled(false)
+            model.enabled = false
+            await model.coordinator.setEnabled(
+                CodexIntegrationIdentity.integrationID,
+                false
+            )
+            model.providerNotice =
+                "Codex supervision is disabled. Existing Codex work and Shared Desktop setup were left unchanged."
+        }
     }
 
     var setupEnabled: Bool {
@@ -238,53 +283,74 @@ struct CodexIntegrationSettingsView: View {
                 }
             }
 
-            Toggle("Enable experimental Shared Desktop Labs", isOn: $model.labsEnabled)
+            Text(model.statusLabel)
+                .font(.system(size: 9, weight: .medium))
+            HStack {
+                if model.enabled {
+                    Button("Disable Codex") { model.disable() }
+                } else {
+                    Button("Enable Codex") { model.enable() }
+                }
+            }
+            .disabled(model.isWorking)
+            if let providerNotice = model.providerNotice {
+                Text(providerNotice)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
 
-            if model.labsEnabled {
-                if let presentation = model.diagnostics?.presentation {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(presentation.status)
-                            .font(.system(size: 11, weight: .semibold))
-                        Text(presentation.detail)
+            if model.enabled {
+                Toggle(
+                    "Enable experimental Shared Desktop Labs",
+                    isOn: $model.labsEnabled
+                )
+
+                if model.labsEnabled {
+                    if let presentation = model.diagnostics?.presentation {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(presentation.status)
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(presentation.detail)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                            Text(model.diagnostics?.host.versionLabel ?? "")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                            if model.diagnostics?.evidence.versionQualification
+                                != .compatible {
+                                Text(
+                                    "This Desktop build is outside the verified Shared Desktop tuple. Ordinary Codex supervision remains available."
+                                )
+                                .font(.system(size: 9))
+                                .foregroundStyle(.orange)
+                            }
+                            if let lastDiagnosedAt = model.lastDiagnosedAt {
+                                Text(
+                                    "Checked \(lastDiagnosedAt.formatted(date: .omitted, time: .standard))"
+                                )
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    HStack {
+                        Button(
+                            model.lastDiagnosedAt == nil
+                                ? "Diagnose"
+                                : "Diagnose again"
+                        ) {
+                            model.refresh()
+                        }
+                        Button("Set up") { model.requestSetUp() }
+                        Button("Turn off Shared Desktop") { model.turnOff() }
+                    }
+                    .disabled(model.isWorking)
+
+                    if let result = model.setupResult {
+                        Text(result.logs.last?.message ?? result.outcome.rawValue)
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
-                        Text(model.diagnostics?.host.versionLabel ?? "")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
-                        if model.diagnostics?.evidence.versionQualification
-                            != .compatible {
-                            Text(
-                                "This Desktop build is outside the verified Shared Desktop tuple. Ordinary Codex supervision remains available."
-                            )
-                            .font(.system(size: 9))
-                            .foregroundStyle(.orange)
-                        }
-                        if let lastDiagnosedAt = model.lastDiagnosedAt {
-                            Text(
-                                "Checked \(lastDiagnosedAt.formatted(date: .omitted, time: .standard))"
-                            )
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(.secondary)
-                        }
                     }
-                }
-                HStack {
-                    Button(
-                        model.lastDiagnosedAt == nil
-                            ? "Diagnose"
-                            : "Diagnose again"
-                    ) {
-                        model.refresh()
-                    }
-                    Button("Set up") { model.requestSetUp() }
-                    Button("Turn off") { model.turnOff() }
-                }
-                .disabled(model.isWorking)
-
-                if let result = model.setupResult {
-                    Text(result.logs.last?.message ?? result.outcome.rawValue)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
                 }
             }
 
