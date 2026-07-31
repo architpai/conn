@@ -39,18 +39,39 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Provider boundary checks
+        run: ./scripts/check-provider-boundaries.sh
       - name: Build Conn
         run: swift build
       - name: Codex adapter tests
         run: '"$(swift build --show-bin-path)/conn-codex-adapter-tests" --portable'
+      - name: Pi adapter tests
+        run: '"$(swift build --show-bin-path)/conn-pi-adapter-tests"'
       - name: Domain tests
         run: '"$(swift build --show-bin-path)/conn-domain-tests"'
+      - name: UI policy tests
+        run: '"$(swift build --show-bin-path)/conn-ui-tests"'
       # The app-core suite exercises macOS session and workspace behavior that
       # requires an interactive login session. Run it as part of the local
       # release gate documented in docs/releasing.md; hosted runners are
       # intentionally limited to the portable suites below.
       - name: Release inspector tests
         run: ./scripts/test-inspect-release.sh
+
+  pi-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm pi:typecheck
+      - run: pnpm --filter @conn/pi-extension test
 
   website:
     needs: changes

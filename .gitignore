@@ -33,6 +33,10 @@ plans/
 docs/architecture/*-phase*-results.md
 docs/architecture/*-phase*-parity-contract.md
 docs/architecture/*-provider-neutral-plan.md
+docs/architecture/conn-v0.2.1-pi-integration-plan.md
+docs/spike/*-v0.2.1.md
+prototypes/pi-external-control/
+prototypes/pi-parity/
 
 # Release output and signing material
 dist/

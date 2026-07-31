@@ -11,10 +11,15 @@ it exercises macOS workspace and session behavior that hosted CI cannot model.
 
 ```sh
 swift run conn-codex-adapter-tests
+swift run conn-pi-adapter-tests
 swift run conn-domain-tests
 swift run conn-app-core-tests
+swift run conn-ui-tests
+./scripts/check-provider-boundaries.sh
 ./scripts/test-inspect-release.sh
 pnpm install --frozen-lockfile
+pnpm pi:typecheck
+pnpm --filter @conn/pi-extension test
 pnpm web:build
 pnpm web:lint
 ```
@@ -35,21 +40,21 @@ codesign --verify --deep --strict --verbose=2 .build/conn-app/Conn.app
 ```sh
 codesign --force --timestamp \
   --sign "Developer ID Application: NAME (TEAMID)" \
-  dist/Conn-0.2.0.dmg
-xcrun notarytool submit dist/Conn-0.2.0.dmg \
+  dist/Conn-0.2.1.dmg
+xcrun notarytool submit dist/Conn-0.2.1.dmg \
   --keychain-profile CONN_NOTARY --wait
-xcrun stapler staple dist/Conn-0.2.0.dmg
-xcrun stapler validate dist/Conn-0.2.0.dmg
+xcrun stapler staple dist/Conn-0.2.1.dmg
+xcrun stapler validate dist/Conn-0.2.1.dmg
 spctl --assess --type open --context context:primary-signature \
-  --verbose=4 dist/Conn-0.2.0.dmg
-./scripts/inspect-release.sh --dmg "$PWD/dist/Conn-0.2.0.dmg"
+  --verbose=4 dist/Conn-0.2.1.dmg
+./scripts/inspect-release.sh --dmg "$PWD/dist/Conn-0.2.1.dmg"
 ```
 
 Signing and stapling change the DMG bytes, so generate the checksum only after
 those operations:
 
 ```sh
-(cd dist && shasum -a 256 Conn-0.2.0.dmg > Conn-0.2.0.dmg.sha256)
+(cd dist && shasum -a 256 Conn-0.2.1.dmg > Conn-0.2.1.dmg.sha256)
 ```
 
 The alpha artifacts use the explicit `--ad-hoc` packaging path because the

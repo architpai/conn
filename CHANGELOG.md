@@ -6,10 +6,59 @@ public alpha releases.
 
 ## [Unreleased]
 
-### Planned
+### Added
 
-- Broader Codex App Server version compatibility.
-- Continued accessibility, interaction, and release-hardening work.
+- An opt-in external Pi `0.83.0` Integration using Pi's standard global
+  extension, a bounded current-user local broker, and acknowledged commands.
+- Pi Session discovery, live transcript projection, reconnect handling,
+  completion outcomes, follow-up, steer, interrupt, model visibility, and idle
+  model switching.
+- Independent Codex and Pi activation controls. Both Integrations are off by
+  default and can be enabled or disabled without stopping harness-owned work.
+- User-controlled Session dismissal. Dismissed Sessions stay outside the
+  visible set until new activity arrives, while explicit search can still find
+  them.
+- Official upstream Pi and OpenAI harness marks with packaged-asset,
+  attribution, and release-inspection coverage.
+
+### Changed
+
+- Codex discovery now admits only qualified standalone CLI and Codex Desktop
+  Sessions, excluding unrelated clients that happen to use Codex infrastructure.
+- Transcript presentation removes the UI-only 40-entry cap, renders the
+  Integration-provided bounded history lazily, and filters internal lifecycle
+  events from user-visible activity.
+- Pi tool calls remain ordinary transcript activity; only non-standard
+  approval and question concepts remain unsupported.
+- Session rows now contain their dismiss controls, center harness marks against
+  the full card, and center empty states in the usable detail viewport.
+- The landing page and interactive product mock now represent Codex and Pi,
+  functional dismissal, accurate visible-set counts, model visibility, and the
+  v0.2.1 Integration boundary.
+
+### Fixed
+
+- Resume and reconnect projection for Pi Sessions no longer marks every exited
+  Session as reconnecting or loses an active resumed Session.
+- Pi completion notifications clear when inspected without erasing the Session
+  or changing its underlying settled outcome.
+- Pi transcript updates continue live after the initial notification sync.
+- Completed and disconnected Pi Sessions settle to bounded idle/completed
+  presentation instead of remaining permanently active.
+- Session transcript rendering no longer leaks internal agent/turn lifecycle
+  markers or introduces the same noise into Codex Sessions.
+- Official harness marks and empty-state content now render centered in the
+  native Session workspace.
+
+### Known limitations
+
+- Pi support is for independently launched external TUIs. Conn does not launch,
+  restart, stop, or create Pi Sessions.
+- Pi has no standard approval or structured-question concepts. Conn does not
+  guess at user-customized tool implementations.
+- Pi TUIs that were already open when the extension was installed need one
+  `/reload`.
+- This remains alpha software. The local ad-hoc artifact is not notarized.
 
 ## [0.2.0] - 2026-07-29
 

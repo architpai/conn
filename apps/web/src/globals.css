@@ -60,6 +60,7 @@ svg { display: block; }
 .demo-status { height: 24px; padding: 0 8px; display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; font-size: 9px; background: rgba(255,255,255,.055); }
 .demo-status b { font-variant-numeric: tabular-nums; }
 .demo-status.working { color: var(--teal); background: rgba(53,226,195,.1); }
+.demo-status.completed { color: #42d383; background: rgba(66,211,131,.1); }
 .demo-status.idle { color: #b0b6b1; }
 .chrome-action { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: #c0c5c1; background: rgba(255,255,255,.06); font-size: 15px; cursor: pointer; }
 .chrome-action:hover { background: rgba(255,255,255,.11); }
@@ -70,23 +71,35 @@ svg { display: block; }
 .session-sidebar > header { height: 50px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; font-size: 15px; }
 .session-sidebar > header span { color: #8f9690; font-size: 15px; }
 .session-list { padding: 0 8px; display: grid; gap: 5px; }
-.session-row { width: 100%; padding: 9px; display: flex; align-items: flex-start; gap: 9px; text-align: left; border-radius: 10px; background: rgba(255,255,255,.022); cursor: pointer; }
+.session-row { width: 100%; min-height: 68px; display: flex; align-items: stretch; gap: 4px; text-align: left; border-radius: 10px; background: rgba(255,255,255,.022); }
 .session-row.selected { background: rgba(64,134,222,.23); }
+.session-select { min-width: 0; flex: 1; padding: 9px 0 9px 9px; display: flex; align-items: center; gap: 9px; text-align: left; background: transparent; cursor: pointer; }
+.session-dismiss { width: 27px; flex: none; margin-right: 5px; padding: 0; background: transparent; color: #8e958f; font-size: 15px; cursor: pointer; }
+.session-dismiss:hover { color: #eef1ee; }
 .session-row-copy { min-width: 0; display: grid; gap: 2px; }
 .session-row-copy b { overflow: hidden; font-size: 11px; line-height: 1.25; text-overflow: ellipsis; }
 .session-row-copy span, .session-row-copy em { overflow: hidden; color: #8e958f; font-size: 9px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .session-row-copy em.working { color: var(--teal); font-weight: 620; }
+.session-row-copy em.completed { color: #42d383; font-weight: 620; }
+.session-list-empty { margin: 24px 8px; color: #777e78; font-size: 10px; text-align: center; }
 .openai-mark { width: 30px; height: 30px; flex: none; display: grid; place-items: center; color: #f0f1ee; }
-.openai-mark > span { width: 29px; height: 29px; background: currentColor; -webkit-mask: url("/openai-blossom.png") center / contain no-repeat; mask: url("/openai-blossom.png") center / contain no-repeat; }
+.openai-mark > span { width: 29px; height: 29px; background: currentColor; -webkit-mask: url("/openai-blossom.svg") center / contain no-repeat; mask: url("/openai-blossom.svg") center / contain no-repeat; }
 .openai-mark.compact { width: 22px; height: 22px; }
 .openai-mark.compact > span { width: 21px; height: 21px; }
+.pi-mark { width: 30px; height: 30px; flex: none; display: grid; place-items: center; }
+.pi-mark img { width: 29px; height: 29px; display: block; border-radius: 5px; }
+.pi-mark.compact { width: 22px; height: 22px; }
+.pi-mark.compact img { width: 21px; height: 21px; border-radius: 4px; }
 .session-detail { min-width: 0; display: flex; flex-direction: column; }
 .session-header { min-height: 62px; padding: 10px 13px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
 .session-header > span:nth-child(2) { min-width: 0; display: grid; gap: 2px; }
 .session-header b { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .session-header em { color: #8b928c; font-size: 9px; font-style: normal; }
+.session-header small { color: #6f766f; font-size: 8px; }
 .session-header .session-state { margin-left: auto; font-size: 10px; font-weight: 650; }
 .session-state.working { color: var(--teal); }
+.session-state.completed { color: #42d383; }
+.session-state.idle { color: #b0b6b1; }
 .session-state.ready { color: #b6bcb7; }
 .session-header button { min-height: 26px; padding: 0 10px; border: 1px solid rgba(255,255,255,.11); border-radius: 7px; background: rgba(255,255,255,.06); color: #d4d8d4; font-size: 9px; }
 .session-header .close-draft { width: 26px; padding: 0; font-size: 15px; }
@@ -106,6 +119,10 @@ svg { display: block; }
 .tool-activity { margin-top: 7px; height: 31px; padding: 0 9px; display: flex; align-items: center; gap: 7px; border-radius: 8px; background: rgba(255,255,255,.035); font-size: 8px; }
 .tool-activity span, .tool-activity em { color: var(--teal); }
 .tool-activity em { margin-left: auto; font-style: normal; }
+.no-activity { flex: 1; padding: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #adb3ae; text-align: center; }
+.no-activity-wave { margin-bottom: 15px; color: #6f766f; font-size: 23px; letter-spacing: -7px; transform: rotate(90deg); }
+.no-activity b { font-size: 18px; }
+.no-activity p { margin: 8px 0 0; color: #858c86; font-size: 10px; }
 .new-session-empty { flex: 1; padding: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .new-session-symbol { width: 48px; height: 48px; margin-bottom: 16px; display: grid; place-items: center; border-radius: 16px; color: var(--teal); background: rgba(53,226,195,.09); font-size: 27px; }
 .new-session-empty b { font-size: 16px; }
@@ -171,7 +188,7 @@ svg { display: block; }
 .mini-island i:first-of-type { margin-left: auto; }
 .mini-island i:last-child { color: #b4bab5; background: rgba(255,255,255,.07); }
 .harness-visual { position: absolute; left: 50%; bottom: 60px; width: min(400px, calc(100% - 70px)); min-height: 82px; padding: 15px; display: flex; align-items: center; gap: 14px; border-radius: 18px; color: #f3f5f2; background: #0b0d0c; box-shadow: 0 26px 60px rgba(0,0,0,.2); transform: translateX(-50%); }
-.harness-visual span { display: grid; gap: 4px; }
+.harness-visual > span:last-child { display: grid; gap: 4px; }
 .harness-visual b { font-size: 12px; }
 .harness-visual em { color: #828983; font-size: 10px; font-style: normal; }
 .draft-visual { position: absolute; right: clamp(30px,6vw,96px); bottom: 72px; width: min(650px, calc(100% - 60px)); height: 58px; padding: 8px; display: grid; grid-template-columns: 180px 1fr 36px; align-items: center; gap: 8px; border-radius: 16px; color: #9da39e; background: #0b0d0c; box-shadow: 0 28px 70px rgba(0,0,0,.2); font-size: 10px; }
