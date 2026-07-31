@@ -571,6 +571,10 @@ enum Phase4NeutralAggregationTestCases {
                 sessions: [.init(
                     id: sessionID,
                     title: "Restored",
+                    model: .init(
+                        displayName: "Claude Opus 4.1",
+                        reasoningLabel: "High"
+                    ),
                     status: .idle,
                     updatedAt: at(1)
                 )],
@@ -601,6 +605,11 @@ enum Phase4NeutralAggregationTestCases {
             snapshot.sessions.first?.freshness,
             .rehydrated,
             "restored Session begins rehydrated"
+        )
+        suite.checkEqual(
+            snapshot.sessions.first?.session.model?.displayName,
+            "Claude Opus 4.1",
+            "last observed model metadata survives neutral checkpoint restore"
         )
         suite.check(
             snapshot.sessions.first?.actionAvailability.available.isEmpty == true,
@@ -727,6 +736,11 @@ enum Phase4NeutralAggregationTestCases {
                     canonicalPath: "/tmp/neutral-project",
                     equivalenceKey: "neutral-project"
                 ),
+                model: .init(
+                    displayName: "GPT-5.4 mini",
+                    providerLabel: "OpenAI Codex",
+                    reasoningLabel: "Low"
+                ),
                 status: .completed,
                 runs: [firstRun],
                 activities: [firstActivity],
@@ -754,6 +768,11 @@ enum Phase4NeutralAggregationTestCases {
             "composition may supply a Harness asset without changing the semantic model"
         )
         suite.checkEqual(
+            presentation.sessions.first?.modelLabel,
+            "GPT-5.4 mini · Low",
+            "Session presentation exposes bounded provider-neutral model metadata"
+        )
+        suite.checkEqual(
             presentation.sessions.first?.visualState,
             .completed,
             "neutral Session status drives visual state"
@@ -762,6 +781,39 @@ enum Phase4NeutralAggregationTestCases {
             ConnStatusPillPolicy.make(from: presentation.sessions).map(\.kind),
             [.completed],
             "completed Sessions remain represented in the status display"
+        )
+        let retainedWithoutAuthority = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: sessionID,
+                status: .working,
+                runs: [.init(
+                    id: .init(rawValue: "restored-run"),
+                    status: .inProgress,
+                    startedAt: at(2)
+                )],
+                updatedAt: at(2)
+            ),
+            revision: 2,
+            hasCurrentAuthority: false
+        ))
+        suite.checkEqual(
+            retainedWithoutAuthority.sessions.first?.visualState,
+            .idle,
+            "a retained external Session without authority claims neither Working nor Reconnecting"
+        )
+        let exitedWithoutAuthority = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: sessionID,
+                status: .idle,
+                updatedAt: at(2)
+            ),
+            revision: 3,
+            hasCurrentAuthority: false
+        ))
+        suite.checkEqual(
+            exitedWithoutAuthority.sessions.first?.visualState,
+            .idle,
+            "an exited idle Session remains Idle when its live authority ends"
         )
         let legacyLifecycle = ConnActivity(
             id: .init(rawValue: "session-turn_end-123"),
@@ -866,6 +918,118 @@ enum Phase4NeutralAggregationTestCases {
             filteredIdlePill?.primarySessionID,
             recentIdle.first?.id,
             "idle pill navigation stays inside the sidebar's filtered rows"
+        )
+        suite.checkEqual(
+            SessionPickerPolicy.select(
+                sessions: oldIdle + recentIdle,
+                projects: [],
+                configuration: .init(
+                    activityWindow: .last24Hours,
+                    retainedSessionIDs: Set(oldIdle.map(\.id))
+                ),
+                now: at(90_001)
+            ).rows.map(\.session.id),
+            [recentIdle[0].id, oldIdle[0].id],
+            "the currently opened Session remains visible outside the activity window"
+        )
+        let dismissedRecentRows = SessionPickerPolicy.select(
+            sessions: oldIdle + recentIdle,
+            projects: [],
+            configuration: .init(
+                activityWindow: .last24Hours,
+                dismissedSessionIDs: Set(recentIdle.map(\.id))
+            ),
+            now: at(90_001)
+        ).rows
+        suite.check(
+            dismissedRecentRows.isEmpty,
+            "dismissal hides a Session even when it qualifies for the activity window"
+        )
+        var dismissalLedger = ConnSessionDismissalLedger()
+        suite.check(
+            dismissalLedger.dismiss(recentIdle[0], at: at(90_001)),
+            "a visible Session can be dismissed through the neutral presentation seam"
+        )
+        suite.checkEqual(
+            dismissalLedger.dismissedSessionIDs,
+            Set(recentIdle.map(\.id)),
+            "dismissal identity remains scoped by the Session's Integration"
+        )
+        let toolOnlyUpdate = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: recentIdle[0].id,
+                title: recentIdle[0].title,
+                status: .idle,
+                activities: [
+                    .init(
+                        id: .init(rawValue: "post-dismiss-tool"),
+                        kind: .toolCall,
+                        status: .completed,
+                        summary: "bash",
+                        observedAt: at(90_002)
+                    )
+                ],
+                updatedAt: at(90_002)
+            ),
+            revision: 5
+        ))
+        suite.check(
+            !dismissalLedger.reconcile(with: toolOnlyUpdate.sessions),
+            "tool activity does not restore a dismissed Session"
+        )
+        let messageUpdate = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: recentIdle[0].id,
+                title: recentIdle[0].title,
+                status: .idle,
+                activities: toolOnlyUpdate.sessions[0].state.session.activities + [
+                    .init(
+                        id: .init(rawValue: "post-dismiss-agent-message"),
+                        kind: .agentMessage,
+                        status: .completed,
+                        summary: "New answer",
+                        observedAt: at(90_003)
+                    )
+                ],
+                updatedAt: at(90_003)
+            ),
+            revision: 6
+        ))
+        suite.check(
+            dismissalLedger.reconcile(with: messageUpdate.sessions)
+                && dismissalLedger.dismissedSessionIDs.isEmpty,
+            "a new agent message restores a dismissed Session"
+        )
+        _ = dismissalLedger.dismiss(recentIdle[0], at: at(90_004))
+        let dismissalDefaultsName = "conn-dismissal-\(UUID().uuidString)"
+        let dismissalDefaults = UserDefaults(suiteName: dismissalDefaultsName)!
+        defer {
+            dismissalDefaults.removePersistentDomain(
+                forName: dismissalDefaultsName
+            )
+        }
+        let dismissalStore = ConnSessionDismissalPreferenceStore(
+            defaults: dismissalDefaults,
+            key: "dismissals"
+        )
+        suite.check(
+            dismissalStore.save(dismissalLedger)
+                && dismissalStore.load() == dismissalLedger,
+            "dismissed Sessions survive a bounded preference round trip"
+        )
+        let dismissedOldID = oldIdle[0].id
+        suite.check(
+            SessionPickerPolicy.select(
+                sessions: oldIdle + recentIdle,
+                projects: [],
+                configuration: .init(
+                    activityWindow: .last24Hours,
+                    searchText: "Old Idle",
+                    dismissedSessionIDs: [dismissedOldID]
+                ),
+                now: at(90_001)
+            ).rows.map(\.session.id) == [dismissedOldID],
+            "explicit search finds a dismissed Session outside the activity window"
         )
         suite.checkEqual(
             SessionPickerPolicy.select(
@@ -1120,7 +1284,8 @@ enum Phase4NeutralAggregationTestCases {
 
     private static func aggregate(
         session: ConnSession,
-        revision: UInt64
+        revision: UInt64,
+        hasCurrentAuthority: Bool = true
     ) -> ConnAggregateSnapshot {
         let descriptor = IntegrationDescriptor(
             id: codexID,
@@ -1135,6 +1300,7 @@ enum Phase4NeutralAggregationTestCases {
             session: session,
             integration: descriptor,
             freshness: .live,
+            hasCurrentAuthority: hasCurrentAuthority,
             actionAvailability: availability,
             attention: []
         )

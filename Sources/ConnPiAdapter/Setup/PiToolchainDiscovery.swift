@@ -31,7 +31,7 @@ public enum PiToolchainInspection: Equatable, Sendable {
 /// Resolves the actual Node executable and Pi package entry point instead of
 /// relying on the environment inherited by a Finder-launched application.
 public struct PiToolchainDiscovery: Sendable {
-    public static let supportedPiVersion = "0.82.1"
+    public static let supportedPiVersion = "0.83.0"
 
     private let homeDirectory: URL
     private let shellURL: URL?

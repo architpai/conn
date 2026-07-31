@@ -14,6 +14,46 @@ enum Phase115UIOverhaulTestCases {
         testSurfaceGeometryTransitionGeneration(into: &suite)
         testGraphiteChromePolicy(into: &suite)
         testTranscriptActivityDisclosurePolicy(into: &suite)
+        testLiveTranscriptTailChangesAutoScrollIdentity(into: &suite)
+    }
+
+    private static func testLiveTranscriptTailChangesAutoScrollIdentity(
+        into suite: inout TestSuite
+    ) {
+        let sessionID = ConnSessionID(
+            integrationID: .init(rawValue: "pi.external"),
+            upstreamID: .init(rawValue: "live-transcript")
+        )
+        let first = ConnActivity(
+            id: .init(rawValue: "message-1"),
+            kind: .userMessage,
+            status: .completed,
+            summary: "Reply exactly LIVE",
+            observedAt: Date(timeIntervalSince1970: 1)
+        )
+        let response = ConnActivity(
+            id: .init(rawValue: "message-2"),
+            kind: .agentMessage,
+            status: .completed,
+            summary: "LIVE",
+            observedAt: Date(timeIntervalSince1970: 2)
+        )
+        let before = ShellTranscriptActivityPolicy.autoScrollKey(
+            sessionID: sessionID,
+            activities: [first]
+        )
+        let after = ShellTranscriptActivityPolicy.autoScrollKey(
+            sessionID: sessionID,
+            activities: [first, response]
+        )
+
+        suite.check(
+            ShellTranscriptActivityPolicy.shouldAutoScroll(
+                previousKey: before,
+                nextKey: after
+            ),
+            "a live Pi response changes the selected transcript viewport identity"
+        )
     }
 
     private static func testCompactShelfGeometry(into suite: inout TestSuite) {

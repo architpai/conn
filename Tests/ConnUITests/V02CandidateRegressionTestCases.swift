@@ -387,6 +387,197 @@ enum V02CandidateRegressionTestCases {
             )
         }
 
+        do {
+            let defaultsName = "conn-ui-dismissal-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: defaultsName)!
+            defer { defaults.removePersistentDomain(forName: defaultsName) }
+            let integration = DismissalTestIntegration()
+            let coordinator = try ConnIntegrationCoordinator(
+                integrations: [integration],
+                retryDelay: .seconds(60)
+            )
+            let model = ConnViewModel(
+                coordinator: coordinator,
+                defaults: defaults
+            )
+            model.start()
+            defer { model.stop() }
+            for _ in 0..<100 where model.sessions.isEmpty {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            guard let sessionID = model.sessions.first?.id else {
+                suite.check(
+                    false,
+                    "dismissal test Integration must publish one Session"
+                )
+                return
+            }
+            model.dismissSession(sessionID)
+            suite.check(
+                model.pickerResult.rows.isEmpty && model.statusPills.isEmpty,
+                "dismissing a Session removes it from the normal picker and status pills"
+            )
+            model.sessionPickerSearch = "Dismiss me"
+            suite.checkEqual(
+                model.pickerResult.rows.map(\.session.id),
+                [sessionID],
+                "explicit search reveals a dismissed Session"
+            )
+            model.setSurfaceState(.compact)
+            suite.check(
+                model.sessionPickerSearch.isEmpty
+                    && model.pickerResult.rows.isEmpty,
+                "collapsing Conn clears hidden search state and re-hides dismissed Sessions"
+            )
+            model.setSurfaceState(.expanded)
+            model.sessionPickerSearch = ""
+            await integration.publishAgentMessage()
+            for _ in 0..<100 where model.pickerResult.rows.isEmpty {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            suite.checkEqual(
+                model.pickerResult.rows.map(\.session.id),
+                [sessionID],
+                "a newly observed agent message restores the dismissed Session"
+            )
+            suite.check(
+                model.compactNotificationBatch != nil,
+                "the restoring agent message can still notify normally"
+            )
+            model.dismissSession(sessionID)
+            suite.check(
+                model.compactNotificationBatch == nil,
+                "dismissing a Session removes its visible notifications"
+            )
+            model.sessionPickerSearch = "Dismiss me"
+            model.selectSession(sessionID)
+            model.composerText = "Follow up from search"
+            model.submitComposer()
+            for _ in 0..<100 where model.isPerformingAction {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            model.sessionPickerSearch = ""
+            suite.checkEqual(
+                model.pickerResult.rows.map(\.session.id),
+                [sessionID],
+                "an accepted follow-up immediately restores a dismissed Session"
+            )
+            model.dismissSession(sessionID)
+            await integration.publishAttention()
+            for _ in 0..<100 where model.pickerResult.rows.isEmpty {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            suite.check(
+                model.pickerResult.rows.map(\.session.id) == [sessionID]
+                    && model.attentionCount == 1,
+                "a new attention request restores a dismissed Session"
+            )
+        } catch {
+            suite.recordUnexpected(
+                error,
+                context: "verifying Session dismissal presentation"
+            )
+        }
+
+        do {
+            let defaultsName = "conn-ui-outcome-review-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: defaultsName)!
+            defer { defaults.removePersistentDomain(forName: defaultsName) }
+            let integration = OutcomeReviewTestIntegration()
+            let coordinator = try ConnIntegrationCoordinator(
+                integrations: [integration],
+                retryDelay: .seconds(60)
+            )
+            let model = ConnViewModel(
+                coordinator: coordinator,
+                defaults: defaults
+            )
+            model.start()
+            defer { model.stop() }
+            for _ in 0..<100 where model.sessions.first?.visualState != .working {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            guard let sessionID = model.sessions.first?.id else {
+                suite.check(false, "outcome review test must publish one Session")
+                return
+            }
+            await integration.completeCurrentRun()
+            for _ in 0..<100 where model.sessions.first?.visualState != .completed {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            suite.check(
+                model.statusPills.contains { $0.kind == .completed },
+                "a newly completed Run is marked Completed until it is checked"
+            )
+
+            model.selectSession(sessionID)
+            suite.check(
+                model.sessions.first?.visualState == .idle
+                    && !model.statusPills.contains { $0.kind == .completed },
+                "opening a completed Session acknowledges its notification and returns it to Idle"
+            )
+
+            await integration.startAndCompleteNextRun()
+            for _ in 0..<100 where model.sessions.first?.visualState != .completed {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            suite.check(
+                model.statusPills.contains { $0.kind == .completed },
+                "a newer completed Run marks the Session Completed again"
+            )
+        } catch {
+            suite.recordUnexpected(
+                error,
+                context: "verifying completed Session review acknowledgement"
+            )
+        }
+
+        do {
+            let defaultsName = "conn-ui-outcome-review-retention-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: defaultsName)!
+            defer { defaults.removePersistentDomain(forName: defaultsName) }
+            let integration = OutcomeReviewTestIntegration(
+                eventDate: Date().addingTimeInterval(-2 * 24 * 60 * 60)
+            )
+            let coordinator = try ConnIntegrationCoordinator(
+                integrations: [integration],
+                retryDelay: .seconds(60)
+            )
+            let model = ConnViewModel(
+                coordinator: coordinator,
+                defaults: defaults
+            )
+            model.start()
+            defer { model.stop() }
+            for _ in 0..<100 where model.sessions.first?.visualState != .working {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            guard let sessionID = model.sessions.first?.id else {
+                suite.check(false, "retention test must publish one Session")
+                return
+            }
+            suite.checkEqual(
+                model.selectedSession?.id,
+                sessionID,
+                "an active Session outside the activity window can be opened"
+            )
+            await integration.completeCurrentRun()
+            for _ in 0..<100 where model.sessions.first?.visualState != .completed {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            model.markSelectedOutcomeReviewed()
+            suite.check(
+                model.selectedSession?.id == sessionID
+                    && model.pickerResult.rows.map(\.session.id).contains(sessionID),
+                "acknowledging a completed Session never removes the currently opened Session"
+            )
+        } catch {
+            suite.recordUnexpected(
+                error,
+                context: "verifying reviewed Session retention"
+            )
+        }
+
         let draftIntegrationID = IntegrationID(rawValue: "builtin-codex")
         let createdSessionID = ConnSessionID(
             integrationID: draftIntegrationID,
@@ -452,6 +643,274 @@ enum V02CandidateRegressionTestCases {
             "/tmp/configured",
             "one-time Workspace setup flows back into the still-empty draft"
         )
+    }
+}
+
+private actor OutcomeReviewTestIntegration: ConnIntegration {
+    nonisolated let descriptor = IntegrationDescriptor(
+        id: .init(rawValue: "outcome-review-test"),
+        harnessID: .init(rawValue: "test-harness"),
+        displayName: "Pi"
+    )
+    private let generation = IntegrationConnectionGeneration(
+        instanceID: UUID(
+            uuidString: "00000000-0000-0000-0000-000000000003"
+        )!,
+        ordinal: 1
+    )
+    private var continuation: AsyncStream<IntegrationUpdate>.Continuation?
+    private var sequence: UInt64 = 0
+    private let eventDate: Date
+
+    init(eventDate: Date = Date()) {
+        self.eventDate = eventDate
+    }
+
+    func establishFeed() async throws(ConnIntegrationError) -> ConnIntegrationFeed {
+        let pair = AsyncStream<IntegrationUpdate>.makeStream(
+            bufferingPolicy: .bufferingNewest(4)
+        )
+        continuation = pair.continuation
+        let now = eventDate
+        return .init(
+            snapshot: .init(
+                integration: descriptor,
+                generation: generation,
+                throughSequence: 0,
+                inventoryAuthority: .complete,
+                capabilities: .init(canMonitor: true),
+                sessions: [session(
+                    runID: "review-run-1",
+                    status: .working,
+                    runStatus: .inProgress,
+                    at: now
+                )],
+                observedAt: now
+            ),
+            updates: pair.stream
+        )
+    }
+
+    func completeCurrentRun() {
+        publish(
+            runID: "review-run-1",
+            status: .completed,
+            runStatus: .completed
+        )
+    }
+
+    func startAndCompleteNextRun() async {
+        publish(
+            runID: "review-run-2",
+            status: .working,
+            runStatus: .inProgress
+        )
+        await Task.yield()
+        publish(
+            runID: "review-run-2",
+            status: .completed,
+            runStatus: .completed
+        )
+    }
+
+    private func publish(
+        runID: String,
+        status: ConnSessionStatus,
+        runStatus: ConnRunStatus
+    ) {
+        let now = eventDate
+        sequence &+= 1
+        continuation?.yield(.init(
+            integrationID: descriptor.id,
+            cursor: .init(generation: generation, sequence: sequence),
+            observedAt: now,
+            update: .sessionUpsert(session(
+                runID: runID,
+                status: status,
+                runStatus: runStatus,
+                at: now
+            ))
+        ))
+    }
+
+    private func session(
+        runID: String,
+        status: ConnSessionStatus,
+        runStatus: ConnRunStatus,
+        at date: Date
+    ) -> ConnSession {
+        ConnSession(
+            id: .init(
+                integrationID: descriptor.id,
+                upstreamID: .init(rawValue: "review-session")
+            ),
+            title: "Review completion",
+            workspace: .init(canonicalPath: "/tmp/outcome-review-test"),
+            origin: .external,
+            retention: .persistent,
+            status: status,
+            runs: [.init(
+                id: .init(rawValue: runID),
+                status: runStatus,
+                startedAt: date.addingTimeInterval(-1),
+                completedAt: runStatus == .inProgress ? nil : date
+            )],
+            activities: [.init(
+                id: .init(rawValue: "\(runID)-answer"),
+                runID: .init(rawValue: runID),
+                kind: .agentMessage,
+                status: runStatus == .inProgress ? .started : .completed,
+                summary: "Done",
+                observedAt: date
+            )],
+            updatedAt: date
+        )
+    }
+
+    func perform(_ action: ConnAction) async -> ConnActionOutcome {
+        .init(
+            integrationID: descriptor.id,
+            action: action.kind,
+            kind: .unavailable
+        )
+    }
+
+    func disconnect() {
+        continuation?.finish()
+        continuation = nil
+    }
+}
+
+private actor DismissalTestIntegration: ConnIntegration {
+    nonisolated let descriptor = IntegrationDescriptor(
+        id: .init(rawValue: "dismissal-test"),
+        harnessID: .init(rawValue: "test-harness"),
+        displayName: "Test Harness"
+    )
+    private var continuation: AsyncStream<IntegrationUpdate>.Continuation?
+
+    func establishFeed() async throws(ConnIntegrationError) -> ConnIntegrationFeed {
+        let pair = AsyncStream<IntegrationUpdate>.makeStream(
+            bufferingPolicy: .bufferingNewest(4)
+        )
+        continuation = pair.continuation
+        let session = ConnSession(
+            id: .init(
+                integrationID: descriptor.id,
+                upstreamID: .init(rawValue: "dismiss-me")
+            ),
+            title: "Dismiss me",
+            workspace: .init(canonicalPath: "/tmp/dismissal-test"),
+            origin: .external,
+            retention: .persistent,
+            status: .working,
+            runs: [
+                .init(
+                    id: .init(rawValue: "dismissal-active-run"),
+                    status: .inProgress,
+                    startedAt: Date()
+                )
+            ],
+            updatedAt: Date()
+        )
+        return .init(
+            snapshot: .init(
+                integration: descriptor,
+                generation: .init(
+                    instanceID: UUID(
+                        uuidString: "00000000-0000-0000-0000-000000000002"
+                    )!,
+                    ordinal: 1
+                ),
+                throughSequence: 0,
+                inventoryAuthority: .complete,
+                capabilities: .init(canMonitor: true, actions: [.followUp]),
+                sessions: [session],
+                observedAt: Date()
+            ),
+            updates: pair.stream
+        )
+    }
+
+    func perform(_ action: ConnAction) async -> ConnActionOutcome {
+        .init(
+            integrationID: descriptor.id,
+            action: action.kind,
+            kind: .accepted,
+            evidence: "Accepted"
+        )
+    }
+
+    func publishAgentMessage() {
+        let now = Date()
+        let session = ConnSession(
+            id: .init(
+                integrationID: descriptor.id,
+                upstreamID: .init(rawValue: "dismiss-me")
+            ),
+            title: "Dismiss me",
+            workspace: .init(canonicalPath: "/tmp/dismissal-test"),
+            origin: .external,
+            retention: .persistent,
+            status: .idle,
+            activities: [
+                .init(
+                    id: .init(rawValue: "new-agent-message"),
+                    kind: .agentMessage,
+                    status: .completed,
+                    summary: "A new reply",
+                    observedAt: now
+                )
+            ],
+            updatedAt: now
+        )
+        continuation?.yield(.init(
+            integrationID: descriptor.id,
+            cursor: .init(
+                generation: .init(
+                    instanceID: UUID(
+                        uuidString: "00000000-0000-0000-0000-000000000002"
+                    )!,
+                    ordinal: 1
+                ),
+                sequence: 1
+            ),
+            observedAt: now,
+            update: .sessionUpsert(session)
+        ))
+    }
+
+    func publishAttention() {
+        let now = Date()
+        let sessionID = ConnSessionID(
+            integrationID: descriptor.id,
+            upstreamID: .init(rawValue: "dismiss-me")
+        )
+        continuation?.yield(.init(
+            integrationID: descriptor.id,
+            cursor: .init(
+                generation: .init(
+                    instanceID: UUID(
+                        uuidString: "00000000-0000-0000-0000-000000000002"
+                    )!,
+                    ordinal: 1
+                ),
+                sequence: 2
+            ),
+            observedAt: now,
+            update: .attentionUpsert(.init(
+                id: .init(rawValue: "new-attention"),
+                sessionID: sessionID,
+                kind: .approval,
+                summary: "Needs approval",
+                observedAt: now
+            ))
+        ))
+    }
+
+    func disconnect() {
+        continuation?.finish()
+        continuation = nil
     }
 }
 

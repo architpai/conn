@@ -15,6 +15,14 @@ public struct ConnUserFacingNotificationBatch: Equatable, Identifiable, Sendable
     public let duration: TimeInterval
 
     public var id: String { notifications.map(\.id).joined(separator: "|") }
+
+    public init(
+        notifications: [ConnUserFacingNotification],
+        duration: TimeInterval
+    ) {
+        self.notifications = notifications
+        self.duration = duration
+    }
 }
 
 private struct ConnNotificationRunIdentity: Hashable, Sendable {

@@ -55,6 +55,12 @@ public struct ConnOutcomeReviewLedger: Codable, Equatable, Sendable {
         })
     }
 
+    public var reviewedOutcomeIDs: Set<ConnOutcomeIdentity> {
+        Set(markers.compactMap {
+            $0.disposition == .reviewed ? $0.identity : nil
+        })
+    }
+
     @discardableResult
     public mutating func reconcile(
         with snapshot: ConnAggregateSnapshot,

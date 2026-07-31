@@ -82,7 +82,9 @@ enum PiLocalBrokerTestCases {
     static func openRegisteredClient(
         socketURL: URL,
         descriptor: PiBrokerRuntimeDescriptor,
-        outcome: PiBridgeRunOutcome? = nil
+        outcome: PiBridgeRunOutcome? = nil,
+        reason: String = "startup",
+        activitiesJSON: String? = nil
     ) throws -> (descriptor: Int32, response: String) {
         let socketDescriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
         guard socketDescriptor >= 0 else { throw BrokerTestError.socket }
@@ -105,8 +107,9 @@ enum PiLocalBrokerTestCases {
         }
         guard connected == 0 else { throw BrokerTestError.connect }
         let outcomeField = outcome.map { ",\"outcome\":\"\($0.rawValue)\"" } ?? ""
+        let activitiesField = activitiesJSON.map { ",\"activities\":\($0)" } ?? ""
         let frame = """
-        {"type":"register","protocol":1,"generation":"\(descriptor.generation.uuidString)","secret":"\(descriptor.authenticationSecret)","extensionVersion":"0.2.1","piVersion":"0.82.1","instanceId":"instance-live","pid":42,"sessionId":"session-live","reason":"startup","cwd":"/tmp/project","modelProvider":"openai-codex","modelId":"gpt-5.4-mini","thinking":"low","isIdle":true\(outcomeField)}
+        {"type":"register","protocol":1,"generation":"\(descriptor.generation.uuidString)","secret":"\(descriptor.authenticationSecret)","extensionVersion":"0.2.1","piVersion":"0.83.0","instanceId":"instance-live","pid":42,"sessionId":"session-live","reason":"\(reason)","cwd":"/tmp/project","modelProvider":"openai-codex","modelId":"gpt-5.4-mini","thinking":"low","isIdle":true\(outcomeField)\(activitiesField),"availableModels":[{"provider":"openai-codex","id":"gpt-5.4-mini","name":"GPT-5.4 mini","thinkingLevels":["off","low","high"]},{"provider":"anthropic","id":"claude-opus-4-1","name":"Claude Opus 4.1","thinkingLevels":["off","medium","high"]}]}
         """
         try writeLine(frame, to: socketDescriptor)
         return (socketDescriptor, try readLine(from: socketDescriptor))

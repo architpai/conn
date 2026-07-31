@@ -97,11 +97,16 @@ public actor PiExternalIntegration: ConnIntegration {
                 ConnDomainBounds.default.maximumBufferedUpdates
             )
         ) { continuation in
-            let task = Task { [broker] in
+            let task = Task {
                 var nextSequence = sequence
                 var sessionsByUpstreamID = Dictionary(
                     uniqueKeysWithValues: initialSessions.map {
                         ($0.id.upstreamID.rawValue, $0)
+                    }
+                )
+                var activeInstanceBySessionID = Dictionary(
+                    uniqueKeysWithValues: brokerFeed.registrations.map {
+                        ($0.handshake.sessionID, $0.handshake.instanceID)
                     }
                 )
                 for await event in brokerFeed.events {
@@ -116,6 +121,9 @@ public actor PiExternalIntegration: ConnIntegration {
                         sessionsByUpstreamID[
                             registration.handshake.sessionID
                         ] = mapped
+                        activeInstanceBySessionID[
+                            registration.handshake.sessionID
+                        ] = registration.handshake.instanceID
                         continuation.yield(.init(
                             integrationID: PiExternalIntegrationIdentity.integrationID,
                             cursor: .init(generation: generation, sequence: nextSequence),
@@ -145,16 +153,23 @@ public actor PiExternalIntegration: ConnIntegration {
                             observedAt: now,
                             update: .sessionUpsert(mapped)
                         ))
-                    case .disconnected:
+                    case let .disconnected(sessionID, instanceID):
+                        guard activeInstanceBySessionID[sessionID] == instanceID,
+                              let previous = sessionsByUpstreamID[sessionID] else {
+                            continue
+                        }
+                        activeInstanceBySessionID.removeValue(forKey: sessionID)
+                        let mapped = Self.disconnectedSession(
+                            previous,
+                            observedAt: now
+                        )
+                        sessionsByUpstreamID[sessionID] = mapped
                         continuation.yield(.init(
                             integrationID: PiExternalIntegrationIdentity.integrationID,
                             cursor: .init(generation: generation, sequence: nextSequence),
                             observedAt: now,
-                            update: .authorityLost
+                            update: .sessionUpsert(mapped)
                         ))
-                        continuation.finish()
-                        await broker.stop()
-                        return
                     }
                 }
                 continuation.finish()
@@ -174,17 +189,17 @@ public actor PiExternalIntegration: ConnIntegration {
         case .createSession:
             return outcome(action, .unavailable, "External Pi cannot create Sessions")
         case let .followUp(sessionID, text, modelSelection):
-            if let modelSelection,
-               await currentModelSelection(
-                   for: sessionID.upstreamID.rawValue
-               ) != modelSelection {
-                return outcome(
-                    action,
-                    .rejected,
-                    "Pi's effective model changed; reload the current model selection"
-                )
-            }
             upstreamID = sessionID.upstreamID.rawValue
+            if let modelSelection {
+                let switchOutcome = await apply(
+                    modelSelection,
+                    to: upstreamID,
+                    action: action
+                )
+                if let switchOutcome {
+                    return switchOutcome
+                }
+            }
             command = .followUp(id: UUID().uuidString, message: text.value)
         case let .steer(sessionID, _, text):
             upstreamID = sessionID.upstreamID.rawValue
@@ -223,29 +238,48 @@ public actor PiExternalIntegration: ConnIntegration {
               ) else {
             return .init(outcome: .unavailable)
         }
-        let modelID = ConnSessionModelID(
-            rawValue: "\(effective.provider)\u{1F}\(effective.modelID)"
+        let modelID = Self.modelID(
+            provider: effective.provider,
+            modelID: effective.modelID
         )
         let reasoningID = ConnReasoningEffortID(rawValue: effective.thinkingLevel)
+        let options = effective.availableModels.map { option in
+            let optionID = Self.modelID(
+                provider: option.provider,
+                modelID: option.modelID
+            )
+            let reasoning = option.thinkingLevels.map {
+                ConnReasoningEffortOption(
+                    id: .init(rawValue: $0),
+                    displayName: $0.capitalized
+                )
+            }
+            return ConnSessionModelOption(
+                id: optionID,
+                displayName: option.displayName,
+                detail: option.provider,
+                isDefault: optionID == modelID,
+                reasoningEfforts: reasoning,
+                defaultReasoningEffortID: optionID == modelID
+                    && option.thinkingLevels.contains(effective.thinkingLevel)
+                    ? reasoningID
+                    : reasoning.first?.id
+            )
+        }
+        guard !options.isEmpty,
+              options.contains(where: { option in
+                  option.id == modelID
+                      && option.reasoningEfforts.contains {
+                          $0.id == reasoningID
+                      }
+              }) else {
+            return .init(outcome: .unavailable)
+        }
         return .init(
             outcome: .available,
             catalog: .init(
                 integrationID: descriptor.id,
-                options: [
-                    .init(
-                        id: modelID,
-                        displayName: effective.modelID,
-                        detail: "Current authenticated Pi model",
-                        isDefault: true,
-                        reasoningEfforts: [
-                            .init(
-                                id: reasoningID,
-                                displayName: effective.thinkingLevel.capitalized
-                            )
-                        ],
-                        defaultReasoningEffortID: reasoningID
-                    )
-                ],
+                options: options,
                 currentSelection: .init(
                     modelID: modelID,
                     reasoningEffortID: reasoningID
@@ -274,10 +308,22 @@ public actor PiExternalIntegration: ConnIntegration {
         observedAt: Date
     ) -> ConnSession {
         let handshake = registration.handshake
-        let runID = RunID(rawValue: "pi-active-\(handshake.sessionID)")
-        let runs = handshake.isIdle == false
-            ? [ConnRun(id: runID, status: .inProgress, startedAt: observedAt)]
-            : []
+        let activeRunID = RunID(rawValue: "pi-active-\(handshake.sessionID)")
+        let settledRunID = RunID(rawValue: "pi-settled-\(handshake.sessionID)")
+        let runs: [ConnRun] = if handshake.isIdle == false {
+            [.init(id: activeRunID, status: .inProgress, startedAt: observedAt)]
+        } else {
+            switch handshake.outcome {
+            case .completed:
+                [.init(id: settledRunID, status: .completed, completedAt: observedAt)]
+            case .failed:
+                [.init(id: settledRunID, status: .failed, completedAt: observedAt)]
+            case .interrupted:
+                [.init(id: settledRunID, status: .interrupted, completedAt: observedAt)]
+            case .unknown, nil:
+                []
+            }
+        }
         let status: ConnSessionStatus = if handshake.isIdle == false {
             .working
         } else {
@@ -287,6 +333,15 @@ public actor PiExternalIntegration: ConnIntegration {
             case .interrupted, .unknown, nil: .idle
             }
         }
+        let activities = handshake.activities.map { activity in
+            ConnActivity(
+                id: .init(rawValue: activity.id),
+                kind: Self.activityKind(activity.kind),
+                status: .completed,
+                summary: activity.text,
+                observedAt: observedAt
+            )
+        }
         return .init(
             id: .init(
                 integrationID: PiExternalIntegrationIdentity.integrationID,
@@ -294,18 +349,70 @@ public actor PiExternalIntegration: ConnIntegration {
             ),
             title: handshake.sessionName,
             workspace: .init(canonicalPath: handshake.workspace),
+            model: Self.modelMetadata(
+                provider: handshake.modelProvider,
+                modelID: handshake.modelID,
+                modelName: handshake.availableModels.first {
+                    $0.provider == handshake.modelProvider
+                        && $0.modelID == handshake.modelID
+                }?.displayName,
+                thinking: handshake.thinkingLevel
+            ),
             origin: .external,
             retention: .persistent,
             status: status,
             runs: runs,
+            activities: activities,
             updatedAt: observedAt
         )
+    }
+
+    private static func activityKind(_ rawValue: String) -> ConnActivityKind {
+        switch rawValue {
+        case "userMessage": .userMessage
+        case "agentMessage": .agentMessage
+        case "toolCall": .toolCall
+        default: .unknown
+        }
     }
 
     private static func sessionID(_ upstreamID: String) -> ConnSessionID {
         .init(
             integrationID: PiExternalIntegrationIdentity.integrationID,
             upstreamID: .init(rawValue: upstreamID)
+        )
+    }
+
+    private static func disconnectedSession(
+        _ previous: ConnSession,
+        observedAt: Date
+    ) -> ConnSession {
+        let runs = previous.runs.map { run in
+            guard run.status == .inProgress else { return run }
+            return ConnRun(
+                id: run.id,
+                status: .unknown,
+                startedAt: run.startedAt,
+                completedAt: observedAt
+            )
+        }
+        let status: ConnSessionStatus = switch previous.status {
+        case .working, .waitingForAttention, .unknown: .idle
+        default: previous.status
+        }
+        return .init(
+            id: previous.id,
+            title: previous.title,
+            workspace: previous.workspace,
+            model: previous.model,
+            origin: previous.origin,
+            ownership: previous.ownership,
+            retention: previous.retention,
+            status: status,
+            runs: runs,
+            activities: previous.activities,
+            issues: previous.issues,
+            updatedAt: observedAt
         )
     }
 
@@ -354,19 +461,18 @@ public actor PiExternalIntegration: ConnIntegration {
         }
         var activities = previous?.activities ?? []
         if let activity {
-            let activityKind: ConnActivityKind = switch activity.kind {
-            case "userMessage": .userMessage
-            case "agentMessage": .agentMessage
-            case "toolCall": .toolCall
-            default: .unknown
-            }
+            let activityKind = Self.activityKind(activity.kind)
             let activityRunID = priorActiveRun?.id
                 ?? (state.isIdle ? nil : activeRunID)
+            let activityStatus: ConnActivityStatus =
+                activityKind == .toolCall && !event.hasSuffix("_end")
+                    ? .started
+                    : .completed
             activities.append(ConnActivity(
                 id: .init(rawValue: activity.id),
                 runID: activityRunID,
                 kind: activityKind,
-                status: event.hasSuffix("_end") ? .completed : .started,
+                status: activityStatus,
                 summary: activity.text,
                 observedAt: observedAt
             ))
@@ -396,6 +502,12 @@ public actor PiExternalIntegration: ConnIntegration {
             ),
             title: state.sessionName,
             workspace: .init(canonicalPath: state.workspace),
+            model: Self.modelMetadata(
+                provider: state.modelProvider,
+                modelID: state.modelID,
+                modelName: state.modelName,
+                thinking: state.thinkingLevel
+            ),
             origin: .external,
             retention: .persistent,
             status: status,
@@ -426,10 +538,134 @@ public actor PiExternalIntegration: ConnIntegration {
             for: upstreamID
         ) else { return nil }
         return .init(
-            modelID: .init(
-                rawValue: "\(effective.provider)\u{1F}\(effective.modelID)"
+            modelID: Self.modelID(
+                provider: effective.provider,
+                modelID: effective.modelID
             ),
             reasoningEffortID: .init(rawValue: effective.thinkingLevel)
+        )
+    }
+
+    private func apply(
+        _ selection: ConnSessionModelSelection,
+        to upstreamID: String,
+        action: ConnAction
+    ) async -> ConnActionOutcome? {
+        guard let desired = Self.splitModelID(selection.modelID),
+              let effective = await broker.effectiveModelState(for: upstreamID),
+              effective.isIdle,
+              effective.availableModels.contains(where: {
+                  $0.provider == desired.provider
+                      && $0.modelID == desired.modelID
+                      && $0.thinkingLevels.contains(
+                          selection.reasoningEffortID.rawValue
+                      )
+              }) else {
+            return outcome(
+                action,
+                .rejected,
+                "Pi model selection is stale, unavailable, or the Session is active"
+            )
+        }
+        var state = effective
+        if state.provider != desired.provider || state.modelID != desired.modelID {
+            switch await broker.send(
+                .setModel(
+                    id: UUID().uuidString,
+                    provider: desired.provider,
+                    modelID: desired.modelID
+                ),
+                to: upstreamID
+            ) {
+            case let .accepted(response)
+                where response.modelProvider == desired.provider
+                    && response.modelID == desired.modelID:
+                state = .init(
+                    provider: response.modelProvider,
+                    modelID: response.modelID,
+                    modelName: response.modelName,
+                    thinkingLevel: response.thinkingLevel,
+                    isIdle: response.isIdle,
+                    availableModels: response.availableModels
+                )
+            case let .rejected(error, _):
+                return outcome(action, .rejected, error)
+            case .accepted:
+                return outcome(
+                    action,
+                    .rejected,
+                    "Pi did not confirm the requested model"
+                )
+            case .acknowledgementUncertain:
+                return outcome(
+                    action,
+                    .acknowledgementUncertain,
+                    "Pi model acknowledgement was not received; Conn will not send the message"
+                )
+            }
+        }
+        let desiredThinking = selection.reasoningEffortID.rawValue
+        if state.thinkingLevel != desiredThinking {
+            switch await broker.send(
+                .setThinking(id: UUID().uuidString, level: desiredThinking),
+                to: upstreamID
+            ) {
+            case let .accepted(response)
+                where response.modelProvider == desired.provider
+                    && response.modelID == desired.modelID
+                    && response.thinkingLevel == desiredThinking:
+                break
+            case let .rejected(error, _):
+                return outcome(action, .rejected, error)
+            case .accepted:
+                return outcome(
+                    action,
+                    .rejected,
+                    "Pi did not confirm the requested reasoning level"
+                )
+            case .acknowledgementUncertain:
+                return outcome(
+                    action,
+                    .acknowledgementUncertain,
+                    "Pi reasoning acknowledgement was not received; Conn will not send the message"
+                )
+            }
+        }
+        return nil
+    }
+
+    private static func modelID(
+        provider: String,
+        modelID: String
+    ) -> ConnSessionModelID {
+        .init(rawValue: "\(provider)\u{1F}\(modelID)")
+    }
+
+    private static func splitModelID(
+        _ id: ConnSessionModelID
+    ) -> (provider: String, modelID: String)? {
+        let parts = id.rawValue.split(
+            separator: "\u{1F}",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else {
+            return nil
+        }
+        return (String(parts[0]), String(parts[1]))
+    }
+
+    private static func modelMetadata(
+        provider: String,
+        modelID: String,
+        modelName: String?,
+        thinking: String
+    ) -> ConnSessionModelMetadata {
+        let displayName = modelName.flatMap { $0.isEmpty ? nil : $0 } ?? modelID
+        return .init(
+            displayName: displayName,
+            providerLabel: provider,
+            reasoningLabel: thinking.capitalized
         )
     }
 }

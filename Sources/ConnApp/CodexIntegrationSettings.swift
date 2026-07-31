@@ -388,7 +388,7 @@ struct CodexIntegrationSettingsView: View {
             }
 
             Text(
-                "Harness attribution uses the installed OpenAI Codex/ChatGPT app icon, with “Codex” retained as its accessible Integration label."
+                "Harness attribution uses the official OpenAI Blossom bundled from OpenAI’s logo package, with “Codex” retained as its accessible Integration label."
             )
             .font(.system(size: 9))
             .foregroundStyle(.tertiary)

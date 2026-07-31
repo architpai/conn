@@ -59,7 +59,8 @@ let package = Package(
         ),
         .target(
             name: "ConnCodexAdapter",
-            dependencies: ["ConnDomain"]
+            dependencies: ["ConnDomain"],
+            resources: [.process("Resources")]
         ),
         .executableTarget(
             name: "ConnCodexAdapterTests",

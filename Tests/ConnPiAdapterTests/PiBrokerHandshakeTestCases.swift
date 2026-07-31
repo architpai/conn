@@ -18,7 +18,7 @@ enum PiBrokerHandshakeTestCases {
     ) {
         let data = Data(
             """
-            {"type":"register","protocol":1,"generation":"\(generation.uuidString)","secret":"test-secret","extensionVersion":"0.2.1","piVersion":"0.82.1","instanceId":"instance-1","pid":42,"sessionId":"session-1","reason":"startup","cwd":"/tmp/project","modelProvider":"openai-codex","modelId":"gpt-5.4-mini","thinking":"low","isIdle":true,"outcome":"completed"}
+            {"type":"register","protocol":1,"generation":"\(generation.uuidString)","secret":"test-secret","extensionVersion":"0.2.1","piVersion":"0.83.0","instanceId":"instance-1","pid":42,"sessionId":"session-1","reason":"resume","cwd":"/tmp/project","modelProvider":"openai-codex","modelId":"gpt-5.4-mini","thinking":"low","isIdle":true,"outcome":"completed","activities":[{"id":"entry-user","kind":"userMessage","text":"continue"},{"id":"entry-agent","kind":"agentMessage","text":"done"}],"availableModels":[{"provider":"openai-codex","id":"gpt-5.4-mini","name":"GPT-5.4 mini","thinkingLevels":["off","low","high"]},{"provider":"anthropic","id":"claude-opus-4-1","name":"Claude Opus 4.1","thinkingLevels":["off"]}]}
             """.utf8
         )
         do {
@@ -34,6 +34,17 @@ enum PiBrokerHandshakeTestCases {
                 handshake.outcome == .completed,
                 "reconnection handshake preserves the bounded settled outcome"
             )
+            suite.check(
+                handshake.activities.map(\.id) == ["entry-user", "entry-agent"],
+                "resume registration hydrates stable Pi entry identities"
+            )
+            suite.check(
+                handshake.availableModels.map(\.modelID)
+                    == ["gpt-5.4-mini", "claude-opus-4-1"]
+                    && handshake.availableModels[0].thinkingLevels
+                        == ["off", "low", "high"],
+                "registration exposes a bounded authenticated Pi model catalog"
+            )
         } catch {
             suite.fail("valid Pi handshake was rejected: \(error)")
         }
@@ -44,7 +55,7 @@ enum PiBrokerHandshakeTestCases {
     ) {
         let wrongSecret = Data(
             """
-            {"type":"register","protocol":1,"generation":"\(generation.uuidString)","secret":"wrong","extensionVersion":"0.2.1","piVersion":"0.82.1","instanceId":"instance-1","pid":42,"sessionId":"session-1","reason":"startup","cwd":"/tmp/project","modelProvider":"openai-codex","modelId":"gpt-5.4-mini","thinking":"low"}
+            {"type":"register","protocol":1,"generation":"\(generation.uuidString)","secret":"wrong","extensionVersion":"0.2.1","piVersion":"0.83.0","instanceId":"instance-1","pid":42,"sessionId":"session-1","reason":"startup","cwd":"/tmp/project","modelProvider":"openai-codex","modelId":"gpt-5.4-mini","thinking":"low"}
             """.utf8
         )
         do {
@@ -94,7 +105,7 @@ enum PiBrokerHandshakeTestCases {
         into suite: inout TestSuite
     ) {
         let data = Data(
-            #"{"type":"response","id":"command-1","success":true,"state":{"sessionId":"session-1","sessionName":"Work","cwd":"/tmp/project","isIdle":true,"hasPendingMessages":false,"lastEvent":"agent_settled","activeToolCount":0,"modelProvider":"openai-codex","modelId":"gpt-5.4-mini","modelName":"GPT-5.4 mini","thinking":"low"}}"#.utf8
+            #"{"type":"response","id":"command-1","success":true,"state":{"sessionId":"session-1","sessionName":"Work","cwd":"/tmp/project","isIdle":true,"hasPendingMessages":false,"lastEvent":"agent_settled","activeToolCount":0,"modelProvider":"openai-codex","modelId":"gpt-5.4-mini","modelName":"GPT-5.4 mini","thinking":"low","availableModels":[{"provider":"openai-codex","id":"gpt-5.4-mini","name":"GPT-5.4 mini","thinkingLevels":["off","low","high"]}]}}"#.utf8
         )
         do {
             guard case let .response(response) = try PiBrokerMessageDecoder.decode(data)
@@ -104,6 +115,10 @@ enum PiBrokerHandshakeTestCases {
             }
             suite.check(response.id == "command-1", "response correlation ID decodes exactly")
             suite.check(response.state.isIdle, "effective Pi state accompanies acknowledgement")
+            suite.check(
+                response.state.availableModels.first?.displayName == "GPT-5.4 mini",
+                "response state refreshes the authoritative model catalog"
+            )
         } catch {
             suite.fail("valid response frame failed to decode: \(error)")
         }

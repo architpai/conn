@@ -79,6 +79,7 @@ public struct ConnSessionState: Equatable, Identifiable, Sendable {
     public let session: ConnSession
     public let integration: IntegrationDescriptor
     public let freshness: IntegrationFreshness
+    public let hasCurrentAuthority: Bool
     public let actionAvailability: SessionActionAvailability
     public let attention: [ConnAttentionState]
 
@@ -86,12 +87,14 @@ public struct ConnSessionState: Equatable, Identifiable, Sendable {
         session: ConnSession,
         integration: IntegrationDescriptor,
         freshness: IntegrationFreshness,
+        hasCurrentAuthority: Bool = true,
         actionAvailability: SessionActionAvailability,
         attention: [ConnAttentionState]
     ) {
         self.session = session
         self.integration = integration
         self.freshness = freshness
+        self.hasCurrentAuthority = hasCurrentAuthority
         self.actionAvailability = actionAvailability
         self.attention = attention
     }
@@ -518,6 +521,9 @@ public actor ConnIntegrationCoordinator {
                     session: session,
                     integration: descriptor,
                     freshness: projection.freshness,
+                    hasCurrentAuthority: projection.hasCurrentAuthority(
+                        for: session.id
+                    ),
                     actionAvailability: availability(
                         for: session,
                         attention: attention,

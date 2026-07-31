@@ -1,8 +1,9 @@
 import type {
 	ExtensionAPI,
 	ExtensionContext,
-	MessageEndEvent,
+	MessageStartEvent,
 	SessionStartEvent,
+	TurnEndEvent,
 } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
@@ -13,7 +14,7 @@ import { dirname, join } from "node:path";
 
 export const CONN_PI_EXTENSION_PROTOCOL = 1;
 export const CONN_PI_EXTENSION_VERSION = "0.2.1";
-export const CONN_PI_SUPPORTED_VERSION = "0.82.1";
+export const CONN_PI_SUPPORTED_VERSION = "0.83.0";
 export const CONN_PI_MAXIMUM_FRAME_BYTES = 64 * 1024;
 export const CONN_PI_RECONNECT_LIMIT = 6;
 
@@ -37,6 +38,89 @@ type Command = {
 
 export type RunOutcome = "completed" | "interrupted" | "failed" | "unknown";
 
+export type RegistrationActivity = {
+	id: string;
+	kind: "userMessage" | "agentMessage" | "toolCall";
+	text: string;
+};
+
+type ModelProjectionSource = {
+	provider: string;
+	id: string;
+	name: string;
+	reasoning: boolean;
+	thinkingLevelMap?: Partial<
+		Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", string | null>
+	>;
+};
+
+export type AvailableModelProjection = {
+	provider: string;
+	id: string;
+	name: string;
+	thinkingLevels: string[];
+};
+
+const thinkingLevels = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+] as const;
+
+export function projectAvailableModels(
+	scopedModels: readonly { model: ModelProjectionSource }[],
+	availableModels: readonly ModelProjectionSource[],
+	currentModel?: ModelProjectionSource,
+): AvailableModelProjection[] {
+	const configured = scopedModels.length > 0
+		? scopedModels.map(({ model }) => model)
+		: availableModels;
+	const candidates = currentModel
+		? [currentModel, ...configured]
+		: configured;
+	const seen = new Set<string>();
+	const projected: AvailableModelProjection[] = [];
+	let projectedBytes = 0;
+	for (const model of candidates) {
+		if (
+			![model.provider, model.id, model.name].every(
+				(value) =>
+					value.length > 0 &&
+					!value.includes("\n") &&
+					Buffer.byteLength(value) <= 512,
+			)
+		) {
+			continue;
+		}
+		const key = `${model.provider}\u001f${model.id}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		const supported = model.reasoning
+			? thinkingLevels.filter((level) => {
+				const mapped = model.thinkingLevelMap?.[level];
+				if (mapped === null) return false;
+				return level !== "xhigh" && level !== "max" || mapped !== undefined;
+			})
+			: ["off"];
+		const option = {
+			provider: model.provider,
+			id: model.id,
+			name: model.name,
+			thinkingLevels: [...supported],
+		};
+		const optionBytes = Buffer.byteLength(JSON.stringify(option));
+		if (projectedBytes + optionBytes > 24 * 1024) break;
+		projected.push(option);
+		projectedBytes += optionBytes;
+		if (projected.length >= 100) break;
+	}
+	return projected;
+}
+
 export function runOutcomeFromMessages(messages: readonly unknown[]): RunOutcome {
 	const assistant = [...messages].reverse().find(
 		(message) =>
@@ -55,6 +139,74 @@ export function runOutcomeFromMessages(messages: readonly unknown[]): RunOutcome
 		default:
 			return "unknown";
 	}
+}
+
+export function registrationSnapshotFromEntries(
+	entries: readonly unknown[],
+): { outcome: RunOutcome | undefined; activities: RegistrationActivity[] } {
+	const projected: RegistrationActivity[] = [];
+	const messages: unknown[] = [];
+	for (const entryValue of entries) {
+		if (!entryValue || typeof entryValue !== "object") continue;
+		const entry = entryValue as { type?: unknown; id?: unknown; message?: unknown };
+		if (
+			entry.type !== "message" ||
+			typeof entry.id !== "string" ||
+			!entry.message ||
+			typeof entry.message !== "object"
+		) {
+			continue;
+		}
+		const message = entry.message as { role?: unknown; content?: unknown };
+		messages.push(message);
+		if (message.role !== "user" && message.role !== "assistant") continue;
+		const kind = message.role === "user" ? "userMessage" : "agentMessage";
+		const content = typeof message.content === "string"
+			? [{ type: "text", text: message.content }]
+			: Array.isArray(message.content) ? message.content : [];
+		for (const [index, itemValue] of content.entries()) {
+			if (!itemValue || typeof itemValue !== "object") continue;
+			const item = itemValue as { type?: unknown; text?: unknown; name?: unknown };
+			if (item.type === "text" && typeof item.text === "string" && item.text) {
+				projected.push({
+					id: `${entry.id}:text:${index}`,
+					kind,
+					text: Buffer.from(item.text).subarray(0, 32 * 1024).toString("utf8"),
+				});
+			} else if (
+				message.role === "assistant" &&
+				item.type === "toolCall" &&
+				typeof item.name === "string" &&
+				item.name
+			) {
+				projected.push({
+					id: `${entry.id}:tool:${index}`,
+					kind: "toolCall",
+					text: Buffer.from(item.name).subarray(0, 512).toString("utf8"),
+				});
+			}
+		}
+	}
+
+	const activities: RegistrationActivity[] = [];
+	let byteCount = 0;
+	for (const activity of projected.slice(-200).reverse()) {
+		const size = Buffer.byteLength(JSON.stringify(activity));
+		if (byteCount + size > 40 * 1024) break;
+		activities.unshift(activity);
+		byteCount += size;
+	}
+	return {
+		outcome: messages.some(
+			(message) =>
+				typeof message === "object" &&
+				message !== null &&
+				(message as { role?: unknown }).role === "assistant",
+		)
+			? runOutcomeFromMessages(messages)
+			: undefined,
+		activities,
+	};
 }
 
 const runtimeDescriptorPath =
@@ -106,6 +258,10 @@ export function parsePiPackageVersion(value: unknown): string | undefined {
 		typeof packageMetadata.version === "string"
 		? packageMetadata.version
 		: undefined;
+}
+
+export function isSupportedPiVersion(value: string | undefined): boolean {
+	return value === CONN_PI_SUPPORTED_VERSION;
 }
 
 async function runtimePiVersion(): Promise<string | undefined> {
@@ -172,6 +328,12 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 	let pendingRunOutcome: RunOutcome | undefined;
 	let lastSettledOutcome: RunOutcome | undefined;
 
+	const availableModels = () => projectAvailableModels(
+		context?.scopedModels ?? [],
+		context?.modelRegistry.getAvailable() ?? [],
+		context?.model,
+	);
+
 	const state = () => ({
 		sessionId: context?.sessionManager.getSessionId() ?? null,
 		sessionName: context?.sessionManager.getSessionName() ?? null,
@@ -184,6 +346,7 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 		modelId: context?.model?.id ?? null,
 		modelName: context?.model?.name ?? null,
 		thinking: pi.getThinkingLevel(),
+		availableModels: availableModels(),
 	});
 
 	const send = (value: unknown) => {
@@ -287,7 +450,7 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 			versionDetectionAttempted = true;
 			detectedPiVersion = await runtimePiVersion();
 		}
-		if (detectedPiVersion !== CONN_PI_SUPPORTED_VERSION) return;
+		if (!isSupportedPiVersion(detectedPiVersion)) return;
 		descriptor = await loadRuntimeDescriptor();
 		if (!descriptor) return;
 		const currentDescriptor = descriptor;
@@ -296,6 +459,9 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 		candidate.setEncoding("utf8");
 		candidate.once("connect", () => {
 			reconnectAttempt = 0;
+			const snapshot = registrationSnapshotFromEntries(
+				context?.sessionManager.getBranch() ?? [],
+			);
 			send({
 				type: "register",
 				protocol: CONN_PI_EXTENSION_PROTOCOL,
@@ -313,7 +479,9 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 				modelId: context?.model?.id ?? "unknown",
 				thinking: pi.getThinkingLevel(),
 				isIdle: context?.isIdle() ?? true,
-				outcome: lastSettledOutcome,
+				outcome: lastSettledOutcome ?? snapshot.outcome,
+				activities: snapshot.activities,
+				availableModels: availableModels(),
 			});
 		});
 		candidate.on("data", (chunk) => {
@@ -396,8 +564,8 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 		send({ type: "event", event: eventName, state: state() });
 	};
 
-	const messageText = (event: MessageEndEvent): string | undefined => {
-		const message = event.message as {
+	const messageText = (messageValue: unknown): string | undefined => {
+		const message = messageValue as {
 			role?: string;
 			content?: unknown;
 		};
@@ -427,6 +595,8 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 		context = ctx;
 		shuttingDown = false;
 		reconnectAttempt = 0;
+		pendingRunOutcome = undefined;
+		lastSettledOutcome = undefined;
 		lastEvent = `session_start:${event.reason}`;
 		startWatcher();
 		queueMicrotask(() => void connectBroker());
@@ -440,7 +610,6 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 		send({ type: "event", event: lastEvent, state: state() });
 	});
 	pi.on("turn_start", observe("turn_start"));
-	pi.on("turn_end", observe("turn_end"));
 	pi.on("agent_end", (event, ctx) => {
 		pendingRunOutcome = runOutcomeFromMessages(event.messages);
 		context = ctx;
@@ -461,11 +630,11 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 	});
 	pi.on("model_select", observe("model_select"));
 	pi.on("thinking_level_select", observe("thinking_level_select"));
-	pi.on("message_end", (event, ctx) => {
+	pi.on("message_start", (event: MessageStartEvent, ctx) => {
 		context = ctx;
-		lastEvent = "message_end";
-		const text = messageText(event);
+		lastEvent = "message_start";
 		const role = (event.message as { role?: string }).role;
+		const text = role === "user" ? messageText(event.message) : undefined;
 		send({
 			type: "event",
 			event: lastEvent,
@@ -473,7 +642,24 @@ export default function connPiExtension(pi: ExtensionAPI): void {
 			activity: text
 				? {
 						id: `${instanceId}:${++activitySequence}`,
-						kind: role === "user" ? "userMessage" : "agentMessage",
+						kind: "userMessage",
+						text,
+					}
+				: undefined,
+		});
+	});
+	pi.on("turn_end", (event: TurnEndEvent, ctx) => {
+		context = ctx;
+		lastEvent = "turn_end";
+		const text = messageText(event.message);
+		send({
+			type: "event",
+			event: lastEvent,
+			state: state(),
+			activity: text
+				? {
+						id: `${instanceId}:${++activitySequence}`,
+						kind: "agentMessage",
 						text,
 					}
 				: undefined,

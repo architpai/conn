@@ -48,10 +48,11 @@ License 2.0, Copyright 2025 OpenAI. Codex names and trademarks remain the
 property of their respective owners; this acknowledgement does not imply
 endorsement or affiliation.
 
-The OpenAI Blossom shown as Codex harness attribution in the landing-page mock
-is the unmodified monochrome template asset supplied by the installed ChatGPT
-application. It is used only to identify the directly related OpenAI
-Integration and remains subject to OpenAI's
+The OpenAI Blossom shown as Codex harness attribution is the unmodified black
+SVG supplied in the official logo package downloaded from OpenAI's design
+guidelines page. Conn bundles that exact vector and renders it only as an
+adaptive black-or-white template to identify the directly related OpenAI
+Integration. It remains subject to OpenAI's
 [design guidelines](https://openai.com/brand/) and marks usage terms.
 
 ## Pi badge

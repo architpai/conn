@@ -31,6 +31,8 @@ public struct PiBridgeHandshake: Equatable, Sendable {
     public let thinkingLevel: String
     public let isIdle: Bool?
     public let outcome: PiBridgeRunOutcome?
+    public let activities: [PiBridgeActivity]
+    public let availableModels: [PiBridgeModelOption]
 }
 
 public enum PiBrokerHandshakeDecoder {
@@ -79,7 +81,11 @@ public enum PiBrokerHandshakeDecoder {
               validPath(frame.cwd),
               validIdentifier(frame.modelProvider),
               validIdentifier(frame.modelID),
-              validIdentifier(frame.thinking)
+              validIdentifier(frame.thinking),
+              frame.activities.count <= 200,
+              frame.activities.allSatisfy(\.isValid),
+              frame.availableModels.count <= 100,
+              frame.availableModels.allSatisfy(\.isValid)
         else {
             throw .invalidField
         }
@@ -96,7 +102,9 @@ public enum PiBrokerHandshakeDecoder {
             modelID: frame.modelID,
             thinkingLevel: frame.thinking,
             isIdle: frame.isIdle,
-            outcome: frame.outcome
+            outcome: frame.outcome,
+            activities: frame.activities,
+            availableModels: frame.availableModels
         )
     }
 
@@ -144,6 +152,8 @@ private struct WireHandshake: Decodable {
     let thinking: String
     let isIdle: Bool?
     let outcome: PiBridgeRunOutcome?
+    let activities: [PiBridgeActivity]
+    let availableModels: [PiBridgeModelOption]
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -163,6 +173,71 @@ private struct WireHandshake: Decodable {
         case thinking
         case isIdle
         case outcome
+        case activities
+        case availableModels
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        type = try values.decode(String.self, forKey: .type)
+        protocolVersion = try values.decode(Int.self, forKey: .protocolVersion)
+        generation = try values.decode(UUID.self, forKey: .generation)
+        secret = try values.decode(String.self, forKey: .secret)
+        extensionVersion = try values.decode(String.self, forKey: .extensionVersion)
+        piVersion = try values.decode(String.self, forKey: .piVersion)
+        instanceID = try values.decode(String.self, forKey: .instanceID)
+        pid = try values.decode(Int.self, forKey: .pid)
+        sessionID = try values.decode(String.self, forKey: .sessionID)
+        sessionName = try values.decodeIfPresent(String.self, forKey: .sessionName)
+        reason = try values.decode(String.self, forKey: .reason)
+        cwd = try values.decode(String.self, forKey: .cwd)
+        modelProvider = try values.decode(String.self, forKey: .modelProvider)
+        modelID = try values.decode(String.self, forKey: .modelID)
+        thinking = try values.decode(String.self, forKey: .thinking)
+        isIdle = try values.decodeIfPresent(Bool.self, forKey: .isIdle)
+        outcome = try values.decodeIfPresent(PiBridgeRunOutcome.self, forKey: .outcome)
+        activities = try values.decodeIfPresent(
+            [PiBridgeActivity].self,
+            forKey: .activities
+        ) ?? []
+        availableModels = try values.decodeIfPresent(
+            [PiBridgeModelOption].self,
+            forKey: .availableModels
+        ) ?? []
+    }
+}
+
+public struct PiBridgeModelOption: Codable, Equatable, Sendable {
+    public let provider: String
+    public let modelID: String
+    public let displayName: String
+    public let thinkingLevels: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case provider
+        case modelID = "id"
+        case displayName = "name"
+        case thinkingLevels
+    }
+
+    fileprivate var isValid: Bool {
+        let validThinkingLevels = Set([
+            "off", "minimal", "low", "medium", "high", "xhigh", "max",
+        ])
+        return !provider.isEmpty
+            && provider.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && !provider.contains(where: \.isNewline)
+            && !modelID.isEmpty
+            && modelID.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && !modelID.contains(where: \.isNewline)
+            && !displayName.isEmpty
+            && displayName.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && !displayName.contains(where: \.isNewline)
+            && !thinkingLevels.isEmpty
+            && thinkingLevels.count <= 7
+            && thinkingLevels.allSatisfy {
+                validThinkingLevels.contains($0)
+            }
     }
 }
 
@@ -178,6 +253,7 @@ public struct PiBridgeState: Codable, Equatable, Sendable {
     public let modelID: String
     public let modelName: String?
     public let thinkingLevel: String
+    public let availableModels: [PiBridgeModelOption]
 
     private enum CodingKeys: String, CodingKey {
         case sessionID = "sessionId"
@@ -191,6 +267,26 @@ public struct PiBridgeState: Codable, Equatable, Sendable {
         case modelID = "modelId"
         case modelName
         case thinkingLevel = "thinking"
+        case availableModels
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID = try values.decode(String.self, forKey: .sessionID)
+        sessionName = try values.decodeIfPresent(String.self, forKey: .sessionName)
+        workspace = try values.decode(String.self, forKey: .workspace)
+        isIdle = try values.decode(Bool.self, forKey: .isIdle)
+        hasPendingMessages = try values.decode(Bool.self, forKey: .hasPendingMessages)
+        lastEvent = try values.decode(String.self, forKey: .lastEvent)
+        activeToolCount = try values.decode(Int.self, forKey: .activeToolCount)
+        modelProvider = try values.decode(String.self, forKey: .modelProvider)
+        modelID = try values.decode(String.self, forKey: .modelID)
+        modelName = try values.decodeIfPresent(String.self, forKey: .modelName)
+        thinkingLevel = try values.decode(String.self, forKey: .thinkingLevel)
+        availableModels = try values.decodeIfPresent(
+            [PiBridgeModelOption].self,
+            forKey: .availableModels
+        ) ?? []
     }
 
     fileprivate var isValid: Bool {
@@ -207,6 +303,8 @@ public struct PiBridgeState: Codable, Equatable, Sendable {
             && modelID.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
             && thinkingLevel.utf8.count
                 <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && availableModels.count <= 100
+            && availableModels.allSatisfy(\.isValid)
     }
 }
 

@@ -20,6 +20,24 @@ public enum CodexIntegrationIdentity {
     }
 }
 
+public enum CodexHarnessAsset {
+    public static let officialSourceURL = URL(
+        string: "https://cdn.openai.com/brand/openai-logos.zip"
+    )!
+
+    public static var bundledBadgeURL: URL {
+        guard let url = Bundle.module.url(
+            forResource: "OpenAIBlossom",
+            withExtension: "svg"
+        ) else {
+            preconditionFailure(
+                "ConnCodexAdapter is missing OpenAIBlossom.svg"
+            )
+        }
+        return url
+    }
+}
+
 /// Production Codex implementation of the provider-neutral Conn port.
 ///
 /// App Server transport, schemas, request authority, response tokens, and

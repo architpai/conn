@@ -216,6 +216,7 @@ public struct ConnSessionPresentation: Equatable, Identifiable, Sendable {
     public let state: ConnSessionState
     public let title: String
     public let workspaceLabel: String
+    public let modelLabel: String?
     public let statusLabel: String
     public let visualState: ConnSessionVisualState
     public let tone: ConnPresentationTone
@@ -233,6 +234,7 @@ public struct ConnSessionPresentation: Equatable, Identifiable, Sendable {
         state: ConnSessionState,
         title: String,
         workspaceLabel: String,
+        modelLabel: String? = nil,
         statusLabel: String,
         visualState: ConnSessionVisualState,
         tone: ConnPresentationTone,
@@ -244,6 +246,7 @@ public struct ConnSessionPresentation: Equatable, Identifiable, Sendable {
         self.state = state
         self.title = title
         self.workspaceLabel = workspaceLabel
+        self.modelLabel = modelLabel
         self.statusLabel = statusLabel
         self.visualState = visualState
         self.tone = tone
@@ -302,11 +305,16 @@ public struct ConnDomainPresentation: Equatable, Sendable {
 public enum ConnPresentationBuilder {
     public static func make(
         _ snapshot: ConnAggregateSnapshot,
-        harnessAssets: [HarnessID: String] = [:]
+        harnessAssets: [HarnessID: String] = [:],
+        reviewedOutcomeIDs: Set<ConnOutcomeIdentity> = []
     ) -> ConnDomainPresentation {
         let integrations = snapshot.integrations.map(integration)
         let sessions = snapshot.sessions.map {
-            session($0, harnessAssets: harnessAssets)
+            session(
+                $0,
+                harnessAssets: harnessAssets,
+                reviewedOutcomeIDs: reviewedOutcomeIDs
+            )
         }
         let byID = Dictionary(
             sessions.map { ($0.id, $0) },
@@ -360,9 +368,13 @@ public enum ConnPresentationBuilder {
 
     private static func session(
         _ state: ConnSessionState,
-        harnessAssets: [HarnessID: String]
+        harnessAssets: [HarnessID: String],
+        reviewedOutcomeIDs: Set<ConnOutcomeIdentity>
     ) -> ConnSessionPresentation {
-        let visual = visualState(state)
+        let visual = visualState(
+            state,
+            reviewedOutcomeIDs: reviewedOutcomeIDs
+        )
         let tone: ConnPresentationTone = switch visual {
         case .working: .active
         case .waitingForAttention: .attention
@@ -383,6 +395,11 @@ public enum ConnPresentationBuilder {
             workspaceLabel: state.session.workspace.map {
                 projectName($0.canonicalPath)
             } ?? "No Workspace",
+            modelLabel: state.session.model.map {
+                [$0.displayName, $0.reasoningLabel]
+                    .compactMap(\.self)
+                    .joined(separator: " · ")
+            },
             statusLabel: statusLabel(visual),
             visualState: visual,
             tone: tone,
@@ -391,8 +408,11 @@ public enum ConnPresentationBuilder {
                 label: state.integration.displayName,
                 assetName: harnessAssets[state.integration.harnessID]
             ),
-            runs: state.session.runs.map { run in
+            runs: state.session.runs.compactMap { run in
                 let runActivities = activitiesByRun[run.id] ?? []
+                guard !runActivities.isEmpty || run.status == .inProgress else {
+                    return nil
+                }
                 return .init(
                     run: run,
                     title: runTitle(run.status),
@@ -454,17 +474,35 @@ public enum ConnPresentationBuilder {
     }
 
     private static func visualState(
-        _ state: ConnSessionState
+        _ state: ConnSessionState,
+        reviewedOutcomeIDs: Set<ConnOutcomeIdentity>
     ) -> ConnSessionVisualState {
-        guard state.freshness == .live else { return .stale }
+        guard state.freshness == .live else {
+            return .stale
+        }
         return switch state.session.status {
-        case .working: .working
-        case .waitingForAttention: .waitingForAttention
-        case .completed: .completed
+        case .working: state.hasCurrentAuthority ? .working : .idle
+        case .waitingForAttention:
+            state.hasCurrentAuthority ? .waitingForAttention : .idle
+        case .completed:
+            latestTerminalOutcome(in: state.session).map {
+                reviewedOutcomeIDs.contains($0) ? .idle : .completed
+            } ?? .completed
         case .failed: .failed
         case .idle, .notLoaded: .idle
-        case .unknown: .unknown
+        case .unknown: state.hasCurrentAuthority ? .unknown : .idle
         }
+    }
+
+    private static func latestTerminalOutcome(
+        in session: ConnSession
+    ) -> ConnOutcomeIdentity? {
+        guard let run = session.runs.last(where: {
+            $0.status == .completed
+                || $0.status == .failed
+                || $0.status == .interrupted
+        }) else { return nil }
+        return .init(sessionID: session.id, runID: run.id)
     }
 
     private static func statusLabel(_ state: ConnSessionVisualState) -> String {

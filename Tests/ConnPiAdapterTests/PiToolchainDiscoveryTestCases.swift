@@ -31,7 +31,7 @@ enum PiToolchainDiscoveryTestCases {
             if [ "$1" = "--version" ]; then
               echo v24.16.0
             else
-              echo "${CONN_TEST_PI_VERSION:-0.82.1}"
+              echo "${CONN_TEST_PI_VERSION:-0.83.0}"
             fi
             """.utf8
         ).write(to: node)
@@ -67,7 +67,7 @@ enum PiToolchainDiscoveryTestCases {
             "discovery resolves the Pi launcher to its package entry"
         )
         suite.check(
-            toolchain.piVersion == "0.82.1",
+            toolchain.piVersion == "0.83.0",
             "discovery qualifies only the pinned Pi version"
         )
 
@@ -78,7 +78,7 @@ enum PiToolchainDiscoveryTestCases {
             if [ "$1" = "--version" ]; then
               echo v24.16.0
             else
-              echo 0.83.0
+              echo 0.82.1
             fi
             """.utf8
         ).write(to: unsupportedNode)
@@ -91,7 +91,7 @@ enum PiToolchainDiscoveryTestCases {
             piLauncherURL: launcher
         )
         suite.check(
-            unsupportedInspection == .unsupported(reportedVersion: "0.83.0"),
+            unsupportedInspection == .unsupported(reportedVersion: "0.82.1"),
             "unsupported Pi versions fail qualification explicitly"
         )
     }

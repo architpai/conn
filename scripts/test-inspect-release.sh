@@ -8,6 +8,7 @@ trap 'rm -rf -- "$test_root"' EXIT
 app="$test_root/Conn.app"
 mkdir -p \
   "$app/Contents/MacOS" \
+  "$app/Contents/Resources/Conn_ConnCodexAdapter.bundle" \
   "$app/Contents/Resources/Conn_ConnPiAdapter.bundle"
 print '#!/bin/sh' > "$app/Contents/MacOS/Conn"
 print 'exit 0' >> "$app/Contents/MacOS/Conn"
@@ -15,6 +16,9 @@ chmod 0700 "$app/Contents/MacOS/Conn"
 print 'license fixture' > "$app/Contents/Resources/LICENSE"
 print 'notice fixture' > "$app/Contents/Resources/NOTICE"
 print 'acknowledgements fixture' > "$app/Contents/Resources/ACKNOWLEDGEMENTS.md"
+cp \
+  "$script_dir/../Sources/ConnCodexAdapter/Resources/OpenAIBlossom.svg" \
+  "$app/Contents/Resources/Conn_ConnCodexAdapter.bundle/OpenAIBlossom.svg"
 print 'export default function connPiExtension() {}' \
   > "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/index.ts"
 cp \
@@ -22,6 +26,17 @@ cp \
   "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/PiHarnessBadge.svg"
 
 "$script_dir/inspect-release.sh" --app "$app" >/dev/null
+
+mv \
+  "$app/Contents/Resources/Conn_ConnCodexAdapter.bundle/OpenAIBlossom.svg" \
+  "$app/Contents/Resources/Conn_ConnCodexAdapter.bundle/OpenAIBlossom.svg.missing"
+if "$script_dir/inspect-release.sh" --app "$app" >/dev/null 2>&1; then
+  print -u2 "inspect-release accepted an app without its OpenAI Blossom"
+  exit 1
+fi
+mv \
+  "$app/Contents/Resources/Conn_ConnCodexAdapter.bundle/OpenAIBlossom.svg.missing" \
+  "$app/Contents/Resources/Conn_ConnCodexAdapter.bundle/OpenAIBlossom.svg"
 
 mv \
   "$app/Contents/Resources/Conn_ConnPiAdapter.bundle/index.ts" \

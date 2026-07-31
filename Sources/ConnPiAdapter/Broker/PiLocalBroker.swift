@@ -40,7 +40,10 @@ public struct PiLocalBrokerFeed: Sendable {
 public struct PiEffectiveModelState: Equatable, Sendable {
     public let provider: String
     public let modelID: String
+    public let modelName: String?
     public let thinkingLevel: String
+    public let isIdle: Bool
+    public let availableModels: [PiBridgeModelOption]
 }
 
 public actor PiLocalBroker {
@@ -148,7 +151,10 @@ public actor PiLocalBroker {
             return .init(
                 provider: state.modelProvider,
                 modelID: state.modelID,
-                thinkingLevel: state.thinkingLevel
+                modelName: state.modelName,
+                thinkingLevel: state.thinkingLevel,
+                isIdle: state.isIdle,
+                availableModels: state.availableModels
             )
         }
         guard let handshake = registrationsByClient.values.first(where: {
@@ -159,7 +165,13 @@ public actor PiLocalBroker {
         return .init(
             provider: handshake.modelProvider,
             modelID: handshake.modelID,
-            thinkingLevel: handshake.thinkingLevel
+            modelName: handshake.availableModels.first {
+                $0.provider == handshake.modelProvider
+                    && $0.modelID == handshake.modelID
+            }?.displayName,
+            thinkingLevel: handshake.thinkingLevel,
+            isIdle: handshake.isIdle ?? true,
+            availableModels: handshake.availableModels
         )
     }
 
@@ -332,7 +344,7 @@ private struct PendingPiCommand {
     let continuation: CheckedContinuation<PiBrokerCommandResult, Never>
 }
 
-private let CONN_PI_SUPPORTED_VERSION_SWIFT = "0.82.1"
+private let CONN_PI_SUPPORTED_VERSION_SWIFT = "0.83.0"
 
 private enum PiUnixSocketServerError: Error {
     case pathTooLong

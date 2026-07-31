@@ -196,11 +196,11 @@ final class PiIntegrationSettingsModel: ObservableObject {
         case .ready:
             ""
         case .missing:
-            "Conn could not find both Pi and Node. Install Pi 0.82.1, or repair the Node installation that provides the pi command, then retry."
+            "Conn could not find both Pi and Node. Install Pi 0.83.0, or repair the Node installation that provides the pi command, then retry."
         case let .unsafe(detail):
             "Conn preserved your setup because it could not safely execute it: \(detail)"
         case let .unsupported(version):
-            "Conn v0.2.1 supports Pi 0.82.1; found \(version ?? "an unknown version"). Install the supported Pi version, then retry."
+            "Conn v0.2.1 supports Pi 0.83.0; found \(version ?? "an unknown version"). Install the supported Pi version, then retry."
         case .diagnosticFailure:
             "Conn found Pi and Node but could not qualify them with a bounded version check. Verify that pi --version works in Terminal, then retry."
         }

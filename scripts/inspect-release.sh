@@ -142,6 +142,23 @@ executable="$app_bundle/Contents/MacOS/Conn"
   exit 1
 }
 
+codex_resource_bundle="$app_bundle/Contents/Resources/Conn_ConnCodexAdapter.bundle"
+[[ -d "$codex_resource_bundle" && ! -L "$codex_resource_bundle" ]] || {
+  print -u2 "Conn release is missing its Codex adapter resource bundle."
+  exit 1
+}
+openai_blossom="$codex_resource_bundle/OpenAIBlossom.svg"
+[[ -s "$openai_blossom" && ! -L "$openai_blossom" ]] || {
+  print -u2 "Conn release is missing its regular official OpenAI Blossom."
+  exit 1
+}
+expected_openai_blossom_sha256="75c1e9fffa5e8c437bec1d67197a73992bca45d166c6ff23215185dea8fae92a"
+actual_openai_blossom_sha256="$(shasum -a 256 "$openai_blossom" | awk '{print $1}')"
+[[ "$actual_openai_blossom_sha256" == "$expected_openai_blossom_sha256" ]] || {
+  print -u2 "Conn release contains an unexpected OpenAI Blossom."
+  exit 1
+}
+
 pi_resource_bundle="$app_bundle/Contents/Resources/Conn_ConnPiAdapter.bundle"
 [[ -d "$pi_resource_bundle" && ! -L "$pi_resource_bundle" ]] || {
   print -u2 "Conn release is missing its Pi adapter resource bundle."

@@ -61,11 +61,14 @@ public final class ConnViewModel: ObservableObject {
     private let harnessAssets: [HarnessID: String]
     private let sessionOpener: AnyConnSessionOpener
     private var stateTask: Task<Void, Never>?
+    private var latestSnapshot: ConnAggregateSnapshot?
     private let compactNotificationLifetime =
         ConnCompactNotificationLifetimeController()
     private var notificationLedger = ConnUserFacingNotificationLedger()
     private var outcomeLedger: ConnOutcomeReviewLedger
     private let outcomeStore: ConnOutcomeReviewPreferenceStore
+    private var dismissalLedger: ConnSessionDismissalLedger
+    private let dismissalStore: ConnSessionDismissalPreferenceStore
     private var surfaceGeometryTransitionGate =
         ShellSurfaceGeometryTransitionGenerationGate()
     private var sessionModelLoadGeneration: UInt64 = 0
@@ -84,6 +87,8 @@ public final class ConnViewModel: ObservableObject {
         self.defaultWorkspace = defaults.string(forKey: "conn.defaultWorkspace") ?? ""
         self.outcomeStore = .init(defaults: defaults)
         self.outcomeLedger = outcomeStore.load()
+        self.dismissalStore = .init(defaults: defaults)
+        self.dismissalLedger = dismissalStore.load()
     }
 
     deinit {
@@ -103,12 +108,19 @@ public final class ConnViewModel: ObservableObject {
     }
 
     public var selectedSession: ConnSessionPresentation? {
-        guard let selectedSessionID else { return sessions.first }
-        return sessions.first { $0.id == selectedSessionID }
+        let visible = pickerResult.rows.map(\.session)
+        guard let selectedSessionID else { return visible.first }
+        return visible.first { $0.id == selectedSessionID } ?? visible.first
     }
 
-    public var activeCount: Int { presentation?.activeSessionCount ?? 0 }
-    public var attentionCount: Int { presentation?.attentionCount ?? 0 }
+    public var activeCount: Int {
+        normalPickerResult.rows.filter(\.session.isActive).count
+    }
+    public var attentionCount: Int {
+        normalPickerResult.rows.reduce(0) {
+            $0 + $1.session.attention.count
+        }
+    }
     public var presentsExpandedContent: Bool {
         ShellExpandedContentPresentationPolicy.presentsExpandedContent(
             surface: surfaceState,
@@ -116,7 +128,9 @@ public final class ConnViewModel: ObservableObject {
         )
     }
     public var statusPills: [ConnStatusPillPresentation] {
-        ConnStatusPillPolicy.make(from: pickerResult.rows.map(\.session))
+        ConnStatusPillPolicy.make(
+            from: normalPickerResult.rows.map(\.session)
+        )
     }
     public var isExpanded: Bool { surfaceState == .expanded }
     public var compactShelfPreferredHeight: CGFloat {
@@ -206,7 +220,21 @@ public final class ConnViewModel: ObservableObject {
             configuration: .init(
                 activityWindow: sessionPickerWindow,
                 searchText: sessionPickerSearch,
-                grouping: .project
+                grouping: .project,
+                dismissedSessionIDs: dismissalLedger.dismissedSessionIDs,
+                retainedSessionIDs: Set([selectedSessionID].compactMap { $0 })
+            )
+        )
+    }
+
+    private var normalPickerResult: SessionPickerResult {
+        SessionPickerPolicy.select(
+            sessions: sessions,
+            projects: projects,
+            configuration: .init(
+                activityWindow: sessionPickerWindow,
+                grouping: .project,
+                dismissedSessionIDs: dismissalLedger.dismissedSessionIDs
             )
         )
     }
@@ -237,8 +265,10 @@ public final class ConnViewModel: ObservableObject {
         surfaceState = state
         if state == .compact {
             showsSettings = false
-            showsSessionPicker = false
+            closeSessionPicker()
             newSessionDraft.hide()
+        } else {
+            markSelectedOutcomeReviewed()
         }
     }
 
@@ -253,7 +283,7 @@ public final class ConnViewModel: ObservableObject {
         surfaceState = state
         if state == .compact {
             showsSettings = false
-            showsSessionPicker = false
+            closeSessionPicker()
             newSessionDraft.hide()
         }
         return generation
@@ -266,12 +296,20 @@ public final class ConnViewModel: ObservableObject {
         guard surfaceGeometryTransitionGate.isCurrent(generation),
               surfaceState == state else { return }
         isExpandedContentRevealReady = state == .expanded
+        if state == .expanded {
+            markSelectedOutcomeReviewed()
+        }
     }
 
     public func selectSession(_ sessionID: ConnSessionID) {
-        guard sessions.contains(where: { $0.id == sessionID }) else { return }
+        guard pickerResult.rows.contains(where: {
+            $0.session.id == sessionID
+        }) else { return }
         selectedSessionID = sessionID
-        showsSessionPicker = false
+        markOutcomeReviewed(for: sessionID)
+        if sessionPickerSearch.isEmpty {
+            closeSessionPicker()
+        }
         newSessionDraft.hide()
         selectedFollowUpModelID = nil
         selectedFollowUpReasoningEffortID = nil
@@ -279,6 +317,27 @@ public final class ConnViewModel: ObservableObject {
         actionError = nil
         actionNotice = nil
         loadSessionModels()
+    }
+
+    public func toggleSessionPicker() {
+        if showsSessionPicker {
+            closeSessionPicker()
+        } else {
+            showsSessionPicker = true
+        }
+    }
+
+    public func dismissSession(_ sessionID: ConnSessionID) {
+        guard let session = sessions.first(where: { $0.id == sessionID }),
+              dismissalLedger.dismiss(session) else {
+            return
+        }
+        _ = dismissalStore.save(dismissalLedger)
+        if selectedSessionID == sessionID {
+            selectedSessionID = normalPickerResult.rows.first?.session.id
+        }
+        removeVisibleNotifications(for: sessionID)
+        objectWillChange.send()
     }
 
     public func beginNewSessionDraft() {
@@ -293,7 +352,7 @@ public final class ConnViewModel: ObservableObject {
             defaultWorkspace: defaultWorkspace
         )
         showsSettings = false
-        showsSessionPicker = false
+        closeSessionPicker()
         actionError = nil
         actionNotice = nil
         loadNewSessionModels()
@@ -602,15 +661,8 @@ public final class ConnViewModel: ObservableObject {
     }
 
     public func markSelectedOutcomeReviewed() {
-        guard let selected = selectedSession,
-              let marker = outcomeLedger.markers.first(where: {
-                  $0.identity.sessionID == selected.id
-                      && $0.disposition == .unreviewed
-              }) else { return }
-        if outcomeLedger.markReviewed(marker.identity) {
-            _ = outcomeStore.save(outcomeLedger)
-            objectWillChange.send()
-        }
+        guard let selected = selectedSession else { return }
+        markOutcomeReviewed(for: selected.id)
     }
 
     public func setDisplays(
@@ -638,10 +690,18 @@ public final class ConnViewModel: ObservableObject {
     }
 
     private func publish(_ snapshot: ConnAggregateSnapshot) {
+        latestSnapshot = snapshot
+        if outcomeLedger.reconcile(with: snapshot) {
+            _ = outcomeStore.save(outcomeLedger)
+        }
         let value = ConnPresentationBuilder.make(
             snapshot,
-            harnessAssets: harnessAssets
+            harnessAssets: harnessAssets,
+            reviewedOutcomeIDs: outcomeLedger.reviewedOutcomeIDs
         )
+        if dismissalLedger.reconcile(with: value.sessions) {
+            _ = dismissalStore.save(dismissalLedger)
+        }
         presentation = value
         if let createdSessionID = newSessionDraft.reconcile(
             availableSessionIDs: value.sessions.map(\.id)
@@ -652,13 +712,11 @@ public final class ConnViewModel: ObservableObject {
         if let selectedSessionID,
            !value.sessions.contains(where: { $0.id == selectedSessionID }) {
             if newSessionDraft.pendingSessionID != selectedSessionID {
-                self.selectedSessionID = value.sessions.first?.id
+                self.selectedSessionID =
+                    normalPickerResult.rows.first?.session.id
             }
         } else if selectedSessionID == nil {
-            selectedSessionID = value.sessions.first?.id
-        }
-        if outcomeLedger.reconcile(with: snapshot) {
-            _ = outcomeStore.save(outcomeLedger)
+            selectedSessionID = normalPickerResult.rows.first?.session.id
         }
         if let compactNotificationBatch {
             let reconciled = ConnUserFacingNotificationPolicy.reconcileFinality(
@@ -676,6 +734,22 @@ public final class ConnViewModel: ObservableObject {
         integrationError = value.integrations.isEmpty
             ? "No integrations enabled"
             : nil
+    }
+
+    private func markOutcomeReviewed(for sessionID: ConnSessionID) {
+        guard let marker = outcomeLedger.markers.first(where: {
+            $0.identity.sessionID == sessionID
+                && $0.disposition == .unreviewed
+        }), outcomeLedger.markReviewed(marker.identity) else { return }
+        _ = outcomeStore.save(outcomeLedger)
+        if let latestSnapshot {
+            presentation = ConnPresentationBuilder.make(
+                latestSnapshot,
+                harnessAssets: harnessAssets,
+                reviewedOutcomeIDs: outcomeLedger.reviewedOutcomeIDs
+            )
+        }
+        removeVisibleNotifications(for: sessionID)
     }
 
     private func presentCompactNotification(
@@ -696,6 +770,29 @@ public final class ConnViewModel: ObservableObject {
         onCompactNotificationVisibilityChanged?()
     }
 
+    private func removeVisibleNotifications(for sessionID: ConnSessionID) {
+        guard let batch = compactNotificationBatch else { return }
+        let retained = batch.notifications.filter {
+            $0.sessionID != sessionID
+        }
+        guard retained.count != batch.notifications.count else { return }
+        if retained.isEmpty {
+            compactNotificationLifetime.dismiss()
+            compactNotificationBatch = nil
+        } else {
+            compactNotificationBatch = .init(
+                notifications: retained,
+                duration: batch.duration
+            )
+        }
+        onCompactNotificationVisibilityChanged?()
+    }
+
+    private func closeSessionPicker() {
+        showsSessionPicker = false
+        sessionPickerSearch = ""
+    }
+
     private func perform(
         _ action: ConnAction,
         clearComposerOnAcceptance: Bool = false,
@@ -713,6 +810,15 @@ public final class ConnViewModel: ObservableObject {
             case .accepted:
                 actionNotice = outcome.evidence ?? "Accepted"
                 if clearComposerOnAcceptance { composerText = "" }
+                switch action {
+                case let .followUp(sessionID, _, _),
+                     let .steer(sessionID, _, _):
+                    if dismissalLedger.restore(sessionID) {
+                        _ = dismissalStore.save(dismissalLedger)
+                    }
+                case .createSession, .interrupt, .answer, .resolveApproval:
+                    break
+                }
                 if let clearQuestionDraft {
                     questionDrafts.removeValue(forKey: clearQuestionDraft)
                 }
