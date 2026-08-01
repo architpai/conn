@@ -3,12 +3,14 @@
   "private": true,
   "packageManager": "pnpm@10.13.1",
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "integrations/*"
   ],
   "scripts": {
     "web:dev": "pnpm --filter @conn/web dev",
     "web:build": "pnpm --filter @conn/web build",
     "web:start": "pnpm --filter @conn/web start",
-    "web:lint": "pnpm --filter @conn/web lint"
+    "web:lint": "pnpm --filter @conn/web lint",
+    "pi:typecheck": "pnpm --filter @conn/pi-extension typecheck"
   }
 }

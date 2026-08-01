@@ -599,6 +599,9 @@ public actor AppServerMonitoringRuntime {
 
     private let configuration: AppServerMonitoringRuntimeConfiguration
     private let connectionFactory: @Sendable (URL) -> any AppServerMonitoringConnection
+    private let qualifyThreadOwnership: @Sendable (
+        Set<AppServerThreadID>
+    ) async -> Set<AppServerThreadID>
     private let threadControls: AppServerThreadControlRuntime
     private let legacyPluginRetirement = LegacyPluginRetirementRuntime()
     private let legacyHookRetirement: @Sendable () -> String?
@@ -628,7 +631,11 @@ public actor AppServerMonitoringRuntime {
         configuration: AppServerMonitoringRuntimeConfiguration = .init(),
         legacyHookRetirement: @escaping @Sendable () -> String? = { nil }
     ) {
+        let ownershipPolicy = CodexSessionOwnershipPolicy()
         self.configuration = configuration
+        qualifyThreadOwnership = { candidates in
+            await ownershipPolicy.includedThreadIDs(from: candidates)
+        }
         threadControls = AppServerThreadControlRuntime(configuration: .init(
             routingPolicy: configuration.approvalRoutingPolicy
         ))
@@ -644,10 +651,14 @@ public actor AppServerMonitoringRuntime {
         configuration: AppServerMonitoringRuntimeConfiguration = .init(),
         connectionFactory: @escaping @Sendable (URL) -> any AppServerMonitoringConnection,
         threadControls: AppServerThreadControlRuntime? = nil,
+        qualifyThreadOwnership: @escaping @Sendable (
+            Set<AppServerThreadID>
+        ) async -> Set<AppServerThreadID> = { $0 },
         legacyHookRetirement: @escaping @Sendable () -> String? = { nil }
     ) {
         self.configuration = configuration
         self.connectionFactory = connectionFactory
+        self.qualifyThreadOwnership = qualifyThreadOwnership
         self.threadControls = threadControls ?? AppServerThreadControlRuntime(configuration: .init(
             routingPolicy: configuration.approvalRoutingPolicy
         ))
@@ -689,6 +700,29 @@ public actor AppServerMonitoringRuntime {
         listed: Set<AppServerThreadID>
     ) -> [AppServerThreadID] {
         requested.intersection(listed).sorted { $0.rawValue < $1.rawValue }
+    }
+
+    private func ownershipQualifiedPage(
+        _ page: AppServerThreadListPage
+    ) async -> AppServerThreadListPage {
+        let included = await qualifyThreadOwnership(page.inventoryThreadIDs)
+        return .init(
+            snapshot: .init(
+                cursor: page.snapshot.cursor,
+                observedAt: page.snapshot.observedAt,
+                threads: page.snapshot.threads.filter { included.contains($0.id) },
+                threadFreshness: page.snapshot.threadFreshness,
+                contentAuthority: page.snapshot.contentAuthority,
+                inventoryAuthority: page.snapshot.inventoryAuthority,
+                authoritativeThreadIDs: page.snapshot.authoritativeThreadIDs.map {
+                    $0.intersection(included)
+                }
+            ),
+            nextCursor: page.nextCursor,
+            inventoryThreadIDs: page.inventoryThreadIDs.intersection(included),
+            malformedRowCount: page.malformedRowCount,
+            inventoryMembershipIsComplete: page.inventoryMembershipIsComplete
+        )
     }
 
     package static func connectedInventoryDetail(
@@ -1724,7 +1758,7 @@ public actor AppServerMonitoringRuntime {
             params: params,
             timeout: min(configuration.inventoryRequestTimeout, .seconds(1))
         ),
-              let page = try? adapter.threadListPage(response: response, observedAt: Date())
+              let decodedPage = try? adapter.threadListPage(response: response, observedAt: Date())
         else {
             return .init(
                 scope: initialScope,
@@ -1734,6 +1768,7 @@ public actor AppServerMonitoringRuntime {
                 requiresSnapshot: false
             )
         }
+        let page = await ownershipQualifiedPage(decodedPage)
 
         var seen: Set<AppServerThreadID> = []
         let activeThreads = page.snapshot.threads.filter { thread in
@@ -1857,7 +1892,8 @@ public actor AppServerMonitoringRuntime {
                 detail: Self.metadataRefreshUnavailableDiagnostic
             ))
         }
-        let page = try adapter.threadListPage(response: response, observedAt: Date())
+        let decodedPage = try adapter.threadListPage(response: response, observedAt: Date())
+        let page = await ownershipQualifiedPage(decodedPage)
         var listedThreadIDs: Set<AppServerThreadID> = []
         var orderedThreads: [AppServerThreadInput] = []
         var omittedRows = false
@@ -1944,7 +1980,8 @@ public actor AppServerMonitoringRuntime {
                     detail: "The read-only thread inventory request did not complete within Conn's runtime bound."
                 ))
             }
-            let page = try adapter.threadListPage(response: response, observedAt: Date())
+            let decodedPage = try adapter.threadListPage(response: response, observedAt: Date())
+            let page = await ownershipQualifiedPage(decodedPage)
             malformedRowCount = min(10_000, malformedRowCount + page.malformedRowCount)
             inventoryMembershipIsComplete = inventoryMembershipIsComplete
                 && page.inventoryMembershipIsComplete

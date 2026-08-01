@@ -401,10 +401,41 @@ public struct SessionIssue: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public struct ConnSessionModelMetadata: Codable, Equatable, Sendable {
+    public let displayName: String
+    public let providerLabel: String?
+    public let reasoningLabel: String?
+
+    public init(
+        displayName: String,
+        providerLabel: String? = nil,
+        reasoningLabel: String? = nil,
+        bounds: ConnDomainBounds = .default
+    ) {
+        self.displayName = ConnDomainBounds.boundedSingleLine(
+            displayName,
+            maximumUTF8Bytes: bounds.maximumTitleUTF8Bytes
+        )
+        self.providerLabel = providerLabel.map {
+            ConnDomainBounds.boundedSingleLine(
+                $0,
+                maximumUTF8Bytes: bounds.maximumTitleUTF8Bytes
+            )
+        }
+        self.reasoningLabel = reasoningLabel.map {
+            ConnDomainBounds.boundedSingleLine(
+                $0,
+                maximumUTF8Bytes: bounds.maximumTitleUTF8Bytes
+            )
+        }
+    }
+}
+
 public struct ConnSession: Codable, Equatable, Identifiable, Sendable {
     public let id: ConnSessionID
     public let title: String?
     public let workspace: WorkspaceEvidence?
+    public let model: ConnSessionModelMetadata?
     public let origin: SessionOrigin
     public let ownership: SessionOwnership
     public let retention: SessionRetention
@@ -418,6 +449,7 @@ public struct ConnSession: Codable, Equatable, Identifiable, Sendable {
         id: ConnSessionID,
         title: String? = nil,
         workspace: WorkspaceEvidence? = nil,
+        model: ConnSessionModelMetadata? = nil,
         origin: SessionOrigin = .unknown,
         ownership: SessionOwnership = .harness,
         retention: SessionRetention = .unknown,
@@ -433,6 +465,7 @@ public struct ConnSession: Codable, Equatable, Identifiable, Sendable {
             ConnDomainBounds.boundedSingleLine($0, maximumUTF8Bytes: bounds.maximumTitleUTF8Bytes)
         }
         self.workspace = workspace
+        self.model = model
         self.origin = origin
         self.ownership = ownership
         self.retention = retention
@@ -447,7 +480,6 @@ public struct ConnSession: Codable, Equatable, Identifiable, Sendable {
 // MARK: - Capabilities and actions
 
 public enum ConnActionKind: String, Codable, Hashable, Sendable {
-    case open
     case createSession
     case followUp
     case steer
@@ -704,7 +736,6 @@ public struct ConnStructuredAnswers: Equatable, Sendable {
 }
 
 public enum ConnAction: Equatable, Sendable {
-    case open(sessionID: ConnSessionID)
     case createSession(
         integrationID: IntegrationID,
         workspacePath: ConnWorkspacePath,
@@ -731,7 +762,6 @@ public enum ConnAction: Equatable, Sendable {
 
     public var kind: ConnActionKind {
         switch self {
-        case .open: .open
         case .createSession: .createSession
         case .followUp: .followUp
         case .steer: .steer
@@ -745,8 +775,7 @@ public enum ConnAction: Equatable, Sendable {
         switch self {
         case let .createSession(integrationID, _, _, _):
             integrationID
-        case let .open(sessionID),
-             let .followUp(sessionID, _, _),
+        case let .followUp(sessionID, _, _),
              let .steer(sessionID, _, _),
              let .interrupt(sessionID, _),
              let .answer(sessionID, _, _),

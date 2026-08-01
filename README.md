@@ -6,14 +6,14 @@
 
 Conn is a native macOS notch companion for supervising AI harness Sessions
 while you work in other apps. It shows connected activity, surfaces supported
-permission and question requests, and lets you steer, follow up, or interrupt
-a Run without taking ownership of the harness process.
+permission and question requests, and exposes only the controls that each
+Integration can safely support without taking ownership of the harness process.
 
 > [!IMPORTANT]
-> Conn 0.2.0 remains an alpha preview for Apple Silicon Macs running macOS 15
-> or later. Codex is the only supported harness in v0.2, using CLI/App Server
-> versions `0.144.5` and `0.144.6` exactly. Shared Desktop Mode remains
-> experimental and off by default.
+> Conn 0.2.1 remains an alpha preview for Apple Silicon Macs running macOS 15
+> or later. Codex `0.144.5` and `0.144.6` and Pi `0.83.0` are the only
+> qualified harness versions. Both Integrations are off by default and must be
+> enabled explicitly in Settings. Shared Desktop Mode remains experimental.
 
 Conn is an independent open-source project and is not an official OpenAI
 product.
@@ -25,13 +25,18 @@ product.
 - Expands into a focused workspace with harness attribution, Session switching,
   chronological activity, grouped Runs, full completion summaries, and elapsed
   work time.
-- Supports capability-gated approval, question, follow-up, steer, and stop
-  actions through Codex App Server.
-- Starts a New Session as a local draft in the default Workspace, with one
+- Supports capability-gated approval, question, follow-up, steer, interrupt,
+  model, and reasoning actions through Codex App Server.
+- Observes independently launched Pi TUIs through Pi's standard global
+  extension and supports follow-up, steer, interrupt, model visibility, and
+  idle model switching. Pi has no standard approval or question controls.
+- Starts a Codex Session as a local draft in the default Workspace, with one
   compact model-and-reasoning control; Codex creates the real Session only when
-  the first message is sent.
-- Rehydrates state after reconnecting without taking ownership of Codex Sessions
-  or their lifecycle.
+  the first message is sent. External Pi Sessions must be started in Pi.
+- Lets users enable Codex, Pi, both, or neither without changing the lifecycle
+  of work already owned by either harness.
+- Rehydrates bounded state after reconnecting without taking ownership of
+  Codex or Pi Sessions and their lifecycle.
 - Offers an optional Labs flow for qualifying Codex Desktop and Conn as clients
   of the same managed daemon.
 
@@ -39,8 +44,10 @@ product.
 
 - Apple Silicon Mac. Intel builds have not been validated yet.
 - macOS 15.0 or later.
-- Codex installed, authenticated, and exposing CLI/App Server version `0.144.5`
-  or `0.144.6`.
+- At least one qualified harness:
+  - Codex installed, authenticated, and exposing CLI/App Server version
+    `0.144.5` or `0.144.6`.
+  - Pi `0.83.0` installed with the Node runtime that provides the `pi` command.
 - Swift 6 and the Xcode Command Line Tools only when building from source.
 
 ## Install
@@ -57,36 +64,42 @@ are planned before Conn leaves alpha. See
 Gatekeeper steps, supported versions, verification commands, and uninstall
 instructions.
 
-## Five-minute judge test
+## Five-minute smoke test
 
-1. Confirm an authenticated Codex `0.144.5` or `0.144.6` standalone CLI is
-   installed.
+1. Confirm an authenticated Codex `0.144.5` or `0.144.6`, Pi `0.83.0`, or both
+   are installed.
 2. Install and open Conn using [INSTALL.md](INSTALL.md).
-3. Leave **Shared Desktop Mode** off; Managed Daemon Mode is the default.
-4. Start or resume a harmless Codex Session through the managed daemon.
-5. Confirm the Session appears in Conn, expand it, and inspect its activity.
-6. Open **New Session**, confirm the draft uses the default Workspace, choose a
-   model and reasoning effort, and verify that no Session appears until the
-   first message is sent.
-7. Send a benign follow-up, then confirm the Run continues if Conn is closed and
-   reopened.
+3. Open Settings and explicitly enable the Integration you want to test. Pi
+   setup installs Conn's extension after confirmation; already-open TUIs need
+   one `/reload`.
+4. For Codex, leave **Shared Desktop Mode** off and start or resume a harmless
+   Session through the managed daemon. For Pi, start a harmless TUI Session.
+5. Confirm the Session appears with the correct harness mark, model, status,
+   and transcript.
+6. Send a benign follow-up or steer while active, then verify interrupt on a
+   disposable Run.
+7. For Codex, verify draft-first New Session. For an idle Pi Session, verify an
+   available model can be selected before the next follow-up.
 
-Conn fails closed when the App Server version is unsupported. Some approval and
-question controls only appear when the connected Codex host emits the matching
-request and grants Conn authority to answer it.
+Conn fails closed when a harness version is unsupported. Approval and question
+controls only appear when Codex emits a matching request and grants Conn
+authority to answer it; Conn does not invent equivalents for customized Pi
+tools.
 
 ## Architecture
 
 Conn is a Swift 6 menu-bar/accessory application. Its normal integration path
-is:
+has two adapter-owned paths:
 
 ```text
 Conn.app -> codex app-server proxy --sock -> Codex-managed App Server daemon
+Conn.app <- bounded local socket <- Conn Pi extension <- external Pi TUI
 ```
 
-The proxy is a disposable transport helper. Codex owns the daemon, threads, and
-turns; quitting Conn only disconnects its client. Conn uses structured App
-Server messages and does not scrape transcript files or install hooks.
+The Codex proxy is disposable; Codex owns the daemon, threads, and turns. The
+Pi extension reports bounded structured state and accepts acknowledged
+commands; Pi owns its TUI, Session, and runtime. Quitting or disabling Conn
+does not stop either harness.
 
 The provider-neutral implementation is split into:
 
@@ -95,8 +108,9 @@ The provider-neutral implementation is split into:
 - `ConnAppCore` for Integration aggregation, persistence, presentation, and
   policy.
 - `ConnCodexAdapter` for the version-gated Codex App Server implementation.
+- `ConnPiAdapter` for the version-gated external Pi extension and local broker.
 - `ConnUI` for the provider-neutral AppKit and SwiftUI notch surface.
-- `ConnApp` for Codex-only composition and migration controls in v0.2.
+- `ConnApp` for opt-in Integration composition, setup, and migration controls.
 
 Read the [architecture decisions](docs/adr),
 [domain model](docs/architecture/domain-model.md), and
@@ -104,10 +118,12 @@ Read the [architecture decisions](docs/adr),
 
 ## Privacy and safety
 
-Conn reads structured thread, turn, item, request, and status data needed for
-the visible supervision surface. It opts out of raw reasoning deltas, does not
-poll transcript files, and does not enable daemon remote control. Consequential
-actions are bound to the exact connection, thread, turn, and request identity.
+Conn reads bounded structured Session, Run, Activity, request, model, and status
+data needed for the visible supervision surface. The Pi broker is current-user
+local and validates bounded identities and acknowledgements. Conn does not poll
+transcript files, enable daemon remote control, or claim lifecycle ownership.
+Consequential actions remain bound to the exact Integration and Session
+identity.
 
 Shared Desktop Mode uses an internal Codex Desktop switch that may change in a
 future release. Its setup is explicit, reversible, current-user-only, and
@@ -121,9 +137,12 @@ cd conn
 ./scripts/build-app.sh
 
 swift run conn-codex-adapter-tests
+swift run conn-pi-adapter-tests
 swift run conn-domain-tests
 swift run conn-app-core-tests
 swift run conn-ui-tests
+pnpm pi:typecheck
+pnpm --filter @conn/pi-extension test
 ./scripts/test-inspect-release.sh
 ```
 
@@ -148,11 +167,12 @@ checks.
 
 ## Project status and roadmap
 
-Version 0.2.0 is a continued alpha. It introduces an internal provider-neutral
-Integration API while shipping only the real Codex Integration; Claude Code,
-Pi, OpenCode, and other harnesses are not supported yet. Near-term priorities
-remain Developer ID signing and notarization, broader adapter qualification,
-universal macOS builds, and UI refinement through daily use.
+Version 0.2.1 is a continued alpha. It ships qualified Codex and external Pi
+Integrations on the provider-neutral Session model. Claude Code, OpenCode, and
+other harnesses are not supported. External Pi creation, approval, and question
+controls remain out of scope. Near-term priorities remain Developer ID signing
+and notarization, broader adapter qualification, universal macOS builds, and
+UI refinement through daily use.
 See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Contributing and security

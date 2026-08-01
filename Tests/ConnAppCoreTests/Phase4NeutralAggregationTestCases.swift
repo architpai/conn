@@ -13,12 +13,153 @@ enum Phase4NeutralAggregationTestCases {
     private static let baseDate = Date(timeIntervalSince1970: 1_860_000_000)
 
     static func run(into suite: inout TestSuite) async throws {
+        try await integrationActivationIsExplicitAndReversible(into: &suite)
+        integrationActivationPreferencePreservesExplicitChoice(into: &suite)
         try await simultaneousIntegrationsRemainIsolated(into: &suite)
         try await restoredStateIsNonActionable(into: &suite)
         try twoSlotStoreRecoversLastValidGeneration(into: &suite)
         neutralPresentationPoliciesUseOnlySemanticState(into: &suite)
         historicalCompletedActivitiesLoadedLaterStaySilent(into: &suite)
         completedRunsCompressAroundTheirFullAnswer(into: &suite)
+    }
+
+    private static func integrationActivationIsExplicitAndReversible(
+        into suite: inout TestSuite
+    ) async throws {
+        let sessionID = ConnSessionID(
+            integrationID: codexID,
+            upstreamID: .init(rawValue: "activation-session")
+        )
+        let descriptor = IntegrationDescriptor(
+            id: codexID,
+            harnessID: .init(rawValue: "openai"),
+            displayName: "Codex"
+        )
+        let integration = ControlledIntegration(
+            descriptor: descriptor,
+            snapshot: .init(
+                integration: descriptor,
+                generation: generation,
+                throughSequence: 0,
+                inventoryAuthority: .complete,
+                capabilities: .init(canMonitor: true, actions: [.followUp]),
+                sessions: [.init(
+                    id: sessionID,
+                    title: "Activation Session",
+                    status: .idle,
+                    updatedAt: at(1)
+                )],
+                observedAt: at(1)
+            ),
+            actionOutcome: .accepted
+        )
+        let coordinator = try ConnIntegrationCoordinator(
+            integrations: [integration],
+            enabledIntegrationIDs: [],
+            retryDelay: .seconds(60)
+        )
+        await coordinator.start()
+        defer { Task { await coordinator.stop() } }
+
+        let initiallyDisabledSnapshot = await coordinator.snapshot()
+        suite.check(
+            initiallyDisabledSnapshot.integrations.isEmpty,
+            "registered Integrations stay hidden until explicitly enabled"
+        )
+        let disabledEstablishmentCount = await integration.establishmentCount()
+        suite.checkEqual(
+            disabledEstablishmentCount,
+            0,
+            "disabled Integrations do not establish background feeds"
+        )
+
+        await coordinator.setEnabled(codexID, true)
+        try await waitUntil {
+            await coordinator.snapshot().integrations.first?.freshness == .live
+        }
+        let enabledSnapshot = await coordinator.snapshot()
+        suite.checkEqual(
+            enabledSnapshot.sessions.map(\.id),
+            [sessionID],
+            "enabling publishes only that Integration's qualified Sessions"
+        )
+        let enabledEstablishmentCount = await integration.establishmentCount()
+        suite.checkEqual(
+            enabledEstablishmentCount,
+            1,
+            "enabling establishes the Integration feed once"
+        )
+
+        await coordinator.setEnabled(codexID, false)
+        let disabledSnapshot = await coordinator.snapshot()
+        suite.check(
+            disabledSnapshot.integrations.isEmpty
+                && disabledSnapshot.sessions.isEmpty,
+            "disabling immediately removes the Integration and its Sessions"
+        )
+        let disconnectionCount = await integration.disconnectionCount()
+        suite.checkEqual(
+            disconnectionCount,
+            1,
+            "disabling disconnects Conn without controlling Harness work"
+        )
+        let refused = await coordinator.perform(.followUp(
+            sessionID: sessionID,
+            text: try ConnActionText("must not dispatch")
+        ))
+        suite.checkEqual(
+            refused.kind,
+            .unavailable,
+            "disabled Integration actions fail before provider dispatch"
+        )
+
+        await coordinator.setEnabled(codexID, true)
+        try await waitUntil {
+            await coordinator.snapshot().integrations.first?.freshness == .live
+        }
+        let reenabledSnapshot = await coordinator.snapshot()
+        let reenabledEstablishmentCount = await integration.establishmentCount()
+        suite.checkEqual(
+            reenabledSnapshot.sessions.map(\.id),
+            [sessionID],
+            "re-enabling reuses the registered Integration without reinstalling it"
+        )
+        suite.checkEqual(
+            reenabledEstablishmentCount,
+            2,
+            "re-enabling establishes one fresh feed"
+        )
+    }
+
+    private static func integrationActivationPreferencePreservesExplicitChoice(
+        into suite: inout TestSuite
+    ) {
+        let suiteName = "conn-activation-preferences-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            suite.check(false, "isolated activation UserDefaults suite is available")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let key = "integration.fixture.enabled.v1"
+        let preference = ConnIntegrationActivationPreference(
+            defaults: defaults,
+            key: key
+        )
+
+        suite.check(
+            !preference.resolve(defaultWhenAbsent: false),
+            "fresh-install Integration activation defaults off"
+        )
+        defaults.removeObject(forKey: key)
+        suite.check(
+            preference.resolve(defaultWhenAbsent: true),
+            "legacy-install migration can preserve prior activation"
+        )
+        defaults.set(false, forKey: key)
+        suite.check(
+            !preference.resolve(defaultWhenAbsent: true),
+            "an explicit disabled choice wins over migration defaults"
+        )
     }
 
     private static func historicalCompletedActivitiesLoadedLaterStaySilent(
@@ -430,6 +571,10 @@ enum Phase4NeutralAggregationTestCases {
                 sessions: [.init(
                     id: sessionID,
                     title: "Restored",
+                    model: .init(
+                        displayName: "Claude Opus 4.1",
+                        reasoningLabel: "High"
+                    ),
                     status: .idle,
                     updatedAt: at(1)
                 )],
@@ -460,6 +605,11 @@ enum Phase4NeutralAggregationTestCases {
             snapshot.sessions.first?.freshness,
             .rehydrated,
             "restored Session begins rehydrated"
+        )
+        suite.checkEqual(
+            snapshot.sessions.first?.session.model?.displayName,
+            "Claude Opus 4.1",
+            "last observed model metadata survives neutral checkpoint restore"
         )
         suite.check(
             snapshot.sessions.first?.actionAvailability.available.isEmpty == true,
@@ -586,6 +736,11 @@ enum Phase4NeutralAggregationTestCases {
                     canonicalPath: "/tmp/neutral-project",
                     equivalenceKey: "neutral-project"
                 ),
+                model: .init(
+                    displayName: "GPT-5.4 mini",
+                    providerLabel: "OpenAI Codex",
+                    reasoningLabel: "Low"
+                ),
                 status: .completed,
                 runs: [firstRun],
                 activities: [firstActivity],
@@ -613,6 +768,11 @@ enum Phase4NeutralAggregationTestCases {
             "composition may supply a Harness asset without changing the semantic model"
         )
         suite.checkEqual(
+            presentation.sessions.first?.modelLabel,
+            "GPT-5.4 mini · Low",
+            "Session presentation exposes bounded provider-neutral model metadata"
+        )
+        suite.checkEqual(
             presentation.sessions.first?.visualState,
             .completed,
             "neutral Session status drives visual state"
@@ -621,6 +781,83 @@ enum Phase4NeutralAggregationTestCases {
             ConnStatusPillPolicy.make(from: presentation.sessions).map(\.kind),
             [.completed],
             "completed Sessions remain represented in the status display"
+        )
+        let retainedWithoutAuthority = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: sessionID,
+                status: .working,
+                runs: [.init(
+                    id: .init(rawValue: "restored-run"),
+                    status: .inProgress,
+                    startedAt: at(2)
+                )],
+                updatedAt: at(2)
+            ),
+            revision: 2,
+            hasCurrentAuthority: false
+        ))
+        suite.checkEqual(
+            retainedWithoutAuthority.sessions.first?.visualState,
+            .idle,
+            "a retained external Session without authority claims neither Working nor Reconnecting"
+        )
+        let exitedWithoutAuthority = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: sessionID,
+                status: .idle,
+                updatedAt: at(2)
+            ),
+            revision: 3,
+            hasCurrentAuthority: false
+        ))
+        suite.checkEqual(
+            exitedWithoutAuthority.sessions.first?.visualState,
+            .idle,
+            "an exited idle Session remains Idle when its live authority ends"
+        )
+        let legacyLifecycle = ConnActivity(
+            id: .init(rawValue: "session-turn_end-123"),
+            runID: firstRun.id,
+            kind: .agentMessage,
+            status: .completed,
+            summary: "turn end",
+            observedAt: at(2)
+        )
+        let legacyUnknown = ConnActivity(
+            id: .init(rawValue: "session-agent_settled-124"),
+            runID: firstRun.id,
+            kind: .unknown,
+            status: .completed,
+            summary: "agent settled",
+            observedAt: at(2)
+        )
+        let customTool = ConnActivity(
+            id: .init(rawValue: "custom-tool"),
+            runID: firstRun.id,
+            kind: .toolCall,
+            status: .completed,
+            summary: "acme_custom_tool",
+            observedAt: at(2)
+        )
+        let sanitized = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: sessionID,
+                status: .completed,
+                runs: [firstRun],
+                activities: [
+                    firstActivity,
+                    legacyLifecycle,
+                    legacyUnknown,
+                    customTool,
+                ],
+                updatedAt: at(2)
+            ),
+            revision: 2
+        )).sessions.first
+        suite.checkEqual(
+            sanitized?.activities.map(\.detail),
+            ["First bounded message", "acme_custom_tool"],
+            "restored lifecycle pollution is hidden without suppressing custom tools"
         )
         let idlePresentation = ConnPresentationBuilder.make(aggregate(
             session: .init(
@@ -681,6 +918,118 @@ enum Phase4NeutralAggregationTestCases {
             filteredIdlePill?.primarySessionID,
             recentIdle.first?.id,
             "idle pill navigation stays inside the sidebar's filtered rows"
+        )
+        suite.checkEqual(
+            SessionPickerPolicy.select(
+                sessions: oldIdle + recentIdle,
+                projects: [],
+                configuration: .init(
+                    activityWindow: .last24Hours,
+                    retainedSessionIDs: Set(oldIdle.map(\.id))
+                ),
+                now: at(90_001)
+            ).rows.map(\.session.id),
+            [recentIdle[0].id, oldIdle[0].id],
+            "the currently opened Session remains visible outside the activity window"
+        )
+        let dismissedRecentRows = SessionPickerPolicy.select(
+            sessions: oldIdle + recentIdle,
+            projects: [],
+            configuration: .init(
+                activityWindow: .last24Hours,
+                dismissedSessionIDs: Set(recentIdle.map(\.id))
+            ),
+            now: at(90_001)
+        ).rows
+        suite.check(
+            dismissedRecentRows.isEmpty,
+            "dismissal hides a Session even when it qualifies for the activity window"
+        )
+        var dismissalLedger = ConnSessionDismissalLedger()
+        suite.check(
+            dismissalLedger.dismiss(recentIdle[0], at: at(90_001)),
+            "a visible Session can be dismissed through the neutral presentation seam"
+        )
+        suite.checkEqual(
+            dismissalLedger.dismissedSessionIDs,
+            Set(recentIdle.map(\.id)),
+            "dismissal identity remains scoped by the Session's Integration"
+        )
+        let toolOnlyUpdate = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: recentIdle[0].id,
+                title: recentIdle[0].title,
+                status: .idle,
+                activities: [
+                    .init(
+                        id: .init(rawValue: "post-dismiss-tool"),
+                        kind: .toolCall,
+                        status: .completed,
+                        summary: "bash",
+                        observedAt: at(90_002)
+                    )
+                ],
+                updatedAt: at(90_002)
+            ),
+            revision: 5
+        ))
+        suite.check(
+            !dismissalLedger.reconcile(with: toolOnlyUpdate.sessions),
+            "tool activity does not restore a dismissed Session"
+        )
+        let messageUpdate = ConnPresentationBuilder.make(aggregate(
+            session: .init(
+                id: recentIdle[0].id,
+                title: recentIdle[0].title,
+                status: .idle,
+                activities: toolOnlyUpdate.sessions[0].state.session.activities + [
+                    .init(
+                        id: .init(rawValue: "post-dismiss-agent-message"),
+                        kind: .agentMessage,
+                        status: .completed,
+                        summary: "New answer",
+                        observedAt: at(90_003)
+                    )
+                ],
+                updatedAt: at(90_003)
+            ),
+            revision: 6
+        ))
+        suite.check(
+            dismissalLedger.reconcile(with: messageUpdate.sessions)
+                && dismissalLedger.dismissedSessionIDs.isEmpty,
+            "a new agent message restores a dismissed Session"
+        )
+        _ = dismissalLedger.dismiss(recentIdle[0], at: at(90_004))
+        let dismissalDefaultsName = "conn-dismissal-\(UUID().uuidString)"
+        let dismissalDefaults = UserDefaults(suiteName: dismissalDefaultsName)!
+        defer {
+            dismissalDefaults.removePersistentDomain(
+                forName: dismissalDefaultsName
+            )
+        }
+        let dismissalStore = ConnSessionDismissalPreferenceStore(
+            defaults: dismissalDefaults,
+            key: "dismissals"
+        )
+        suite.check(
+            dismissalStore.save(dismissalLedger)
+                && dismissalStore.load() == dismissalLedger,
+            "dismissed Sessions survive a bounded preference round trip"
+        )
+        let dismissedOldID = oldIdle[0].id
+        suite.check(
+            SessionPickerPolicy.select(
+                sessions: oldIdle + recentIdle,
+                projects: [],
+                configuration: .init(
+                    activityWindow: .last24Hours,
+                    searchText: "Old Idle",
+                    dismissedSessionIDs: [dismissedOldID]
+                ),
+                now: at(90_001)
+            ).rows.map(\.session.id) == [dismissedOldID],
+            "explicit search finds a dismissed Session outside the activity window"
         )
         suite.checkEqual(
             SessionPickerPolicy.select(
@@ -935,7 +1284,8 @@ enum Phase4NeutralAggregationTestCases {
 
     private static func aggregate(
         session: ConnSession,
-        revision: UInt64
+        revision: UInt64,
+        hasCurrentAuthority: Bool = true
     ) -> ConnAggregateSnapshot {
         let descriptor = IntegrationDescriptor(
             id: codexID,
@@ -950,6 +1300,7 @@ enum Phase4NeutralAggregationTestCases {
             session: session,
             integration: descriptor,
             freshness: .live,
+            hasCurrentAuthority: hasCurrentAuthority,
             actionAvailability: availability,
             attention: []
         )
@@ -1014,6 +1365,8 @@ private actor ControlledIntegration: ConnIntegration {
     private let actionOutcome: ConnActionOutcomeKind
     private var continuation: AsyncStream<IntegrationUpdate>.Continuation?
     private var performedActions: [ConnAction] = []
+    private var establishments = 0
+    private var disconnections = 0
 
     init(
         descriptor: IntegrationDescriptor,
@@ -1026,6 +1379,7 @@ private actor ControlledIntegration: ConnIntegration {
     }
 
     func establishFeed() async throws(ConnIntegrationError) -> ConnIntegrationFeed {
+        establishments += 1
         let pair = AsyncStream<IntegrationUpdate>.makeStream(
             bufferingPolicy: .bufferingNewest(32)
         )
@@ -1058,6 +1412,20 @@ private actor ControlledIntegration: ConnIntegration {
 
     func performedActionCount() -> Int {
         performedActions.count
+    }
+
+    func establishmentCount() -> Int {
+        establishments
+    }
+
+    func disconnectionCount() -> Int {
+        disconnections
+    }
+
+    func disconnect() {
+        disconnections += 1
+        continuation?.finish()
+        continuation = nil
     }
 }
 

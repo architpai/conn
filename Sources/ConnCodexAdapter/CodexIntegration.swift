@@ -20,6 +20,24 @@ public enum CodexIntegrationIdentity {
     }
 }
 
+public enum CodexHarnessAsset {
+    public static let officialSourceURL = URL(
+        string: "https://cdn.openai.com/brand/openai-logos.zip"
+    )!
+
+    public static var bundledBadgeURL: URL {
+        guard let url = Bundle.module.url(
+            forResource: "OpenAIBlossom",
+            withExtension: "svg"
+        ) else {
+            preconditionFailure(
+                "ConnCodexAdapter is missing OpenAIBlossom.svg"
+            )
+        }
+        return url
+    }
+}
+
 /// Production Codex implementation of the provider-neutral Conn port.
 ///
 /// App Server transport, schemas, request authority, response tokens, and
@@ -128,13 +146,6 @@ public actor CodexIntegration: ConnIntegration {
         }
 
         switch action {
-        case .open:
-            return outcome(
-                for: action,
-                .unavailable,
-                "Opening Codex is composed by ConnApp, not an App Server action"
-            )
-
         case let .createSession(_, workspacePath, initialPrompt, modelSelection):
             let catalog = await runtime.loadNewThreadModelCatalog()
             guard catalog.outcome == .available,
@@ -801,8 +812,9 @@ package enum CodexProjectionMapper {
         }
         let activities = chronologicalTurns.reduce(into: [ConnActivity]()) {
             result, turn in
-            result.append(contentsOf: turn.items.map { item in
-                ConnActivity(
+            result.append(contentsOf: turn.items.compactMap { item in
+                guard isTranscriptActivity(item.kind) else { return nil }
+                return ConnActivity(
                     id: .init(rawValue: "\(turn.id.rawValue):\(item.id.rawValue)"),
                     runID: .init(rawValue: turn.id.rawValue),
                     kind: activityKind(item.kind),
@@ -837,6 +849,17 @@ package enum CodexProjectionMapper {
             issues: issue,
             updatedAt: thread.updatedAt
         )
+    }
+
+    private static func isTranscriptActivity(
+        _ kind: AppServerItemKind
+    ) -> Bool {
+        switch kind {
+        case .sleep, .enteredReviewMode, .exitedReviewMode, .unknown:
+            false
+        default:
+            true
+        }
     }
 
     private static func capabilities(

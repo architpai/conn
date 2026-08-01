@@ -45,15 +45,21 @@ public struct SessionPickerConfiguration: Equatable, Sendable {
     public var activityWindow: SessionPickerActivityWindow
     public var searchText: String
     public var grouping: SessionPickerGrouping
+    public var dismissedSessionIDs: Set<ConnSessionID>
+    public var retainedSessionIDs: Set<ConnSessionID>
 
     public init(
         activityWindow: SessionPickerActivityWindow = .default,
         searchText: String = "",
-        grouping: SessionPickerGrouping = .flat
+        grouping: SessionPickerGrouping = .flat,
+        dismissedSessionIDs: Set<ConnSessionID> = [],
+        retainedSessionIDs: Set<ConnSessionID> = []
     ) {
         self.activityWindow = activityWindow
         self.searchText = searchText
         self.grouping = grouping
+        self.dismissedSessionIDs = dismissedSessionIDs
+        self.retainedSessionIDs = retainedSessionIDs
     }
 }
 
@@ -92,10 +98,10 @@ public enum SessionPickerPolicy {
         label: "Other"
     )
 
-    /// Applies the picker window and search in one deterministic pass. Search
-    /// is token-based: every normalized token must occur in either the session
-    /// title or its project name. Activity bypasses only the date window, never
-    /// an explicit search.
+    /// Applies normal visibility and explicit search in one deterministic
+    /// pass. A non-empty search is token-based and searches the complete
+    /// retained inventory, including dismissed Sessions and those outside the
+    /// activity window.
     public static func select(
         sessions: [ConnSessionPresentation],
         projects: [ConnProjectPresentation],
@@ -107,6 +113,21 @@ public enum SessionPickerPolicy {
 
         let rows = sessions.lazy.compactMap { session -> SessionPickerRow? in
             let project = projectBySessionID[session.id] ?? ungroupedProject
+            if !searchTokens.isEmpty {
+                guard matches(
+                    tokens: searchTokens,
+                    title: session.title,
+                    projectLabel: project.label
+                ) else { return nil }
+                return SessionPickerRow(
+                    session: session,
+                    projectID: project.id,
+                    projectLabel: project.label
+                )
+            }
+            guard !configuration.dismissedSessionIDs.contains(session.id) else {
+                return nil
+            }
             let isActivelySteerable = session.isActive && {
                 switch session.visualState {
                 case .working, .waitingForAttention: true
@@ -114,13 +135,9 @@ public enum SessionPickerPolicy {
                 }
             }()
             guard isActivelySteerable
+                    || configuration.retainedSessionIDs.contains(session.id)
                     || configuration.activityWindow.includes(session.updatedAt, relativeTo: now)
             else { return nil }
-            guard matches(
-                tokens: searchTokens,
-                title: session.title,
-                projectLabel: project.label
-            ) else { return nil }
             return SessionPickerRow(
                 session: session,
                 projectID: project.id,

@@ -1,0 +1,499 @@
+import Foundation
+
+public enum PiBrokerProtocolBounds {
+    public static let currentVersion = 1
+    public static let maximumFrameBytes = 64 * 1024
+    public static let maximumIdentifierUTF8Bytes = 512
+    public static let maximumPathUTF8Bytes = 4 * 1024
+}
+
+public enum PiBrokerProtocolError: Error, Equatable, Sendable {
+    case frameTooLarge
+    case malformedFrame
+    case unsupportedMessage
+    case unsupportedProtocol
+    case staleGeneration
+    case authenticationFailed
+    case invalidField
+}
+
+public struct PiBridgeHandshake: Equatable, Sendable {
+    public let extensionVersion: String
+    public let piVersion: String
+    public let instanceID: String
+    public let processID: Int32
+    public let sessionID: String
+    public let sessionName: String?
+    public let reason: String
+    public let workspace: String
+    public let modelProvider: String
+    public let modelID: String
+    public let thinkingLevel: String
+    public let isIdle: Bool?
+    public let outcome: PiBridgeRunOutcome?
+    public let activities: [PiBridgeActivity]
+    public let availableModels: [PiBridgeModelOption]
+}
+
+public enum PiBrokerHandshakeDecoder {
+    public static func decode(
+        _ data: Data,
+        expectedGeneration: UUID,
+        expectedSecret: String
+    ) throws(PiBrokerProtocolError) -> PiBridgeHandshake {
+        guard data.count <= PiBrokerProtocolBounds.maximumFrameBytes else {
+            throw .frameTooLarge
+        }
+        let messageType: String
+        do {
+            guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = object["type"] as? String else {
+                throw PiBrokerProtocolError.malformedFrame
+            }
+            messageType = type
+        } catch let error as PiBrokerProtocolError {
+            throw error
+        } catch {
+            throw .malformedFrame
+        }
+        guard messageType == "register" else { throw .unsupportedMessage }
+        let frame: WireHandshake
+        do {
+            frame = try JSONDecoder().decode(WireHandshake.self, from: data)
+        } catch {
+            throw .malformedFrame
+        }
+        guard frame.protocolVersion == PiBrokerProtocolBounds.currentVersion else {
+            throw .unsupportedProtocol
+        }
+        guard frame.generation == expectedGeneration else {
+            throw .staleGeneration
+        }
+        guard constantTimeEqual(frame.secret, expectedSecret) else {
+            throw .authenticationFailed
+        }
+        guard frame.pid > 0, frame.pid <= Int(Int32.max),
+              validIdentifier(frame.extensionVersion),
+              validIdentifier(frame.piVersion),
+              validIdentifier(frame.instanceID),
+              validIdentifier(frame.sessionID),
+              validIdentifier(frame.reason),
+              validPath(frame.cwd),
+              validIdentifier(frame.modelProvider),
+              validIdentifier(frame.modelID),
+              validIdentifier(frame.thinking),
+              frame.activities.count <= 200,
+              frame.activities.allSatisfy(\.isValid),
+              frame.availableModels.count <= 100,
+              frame.availableModels.allSatisfy(\.isValid)
+        else {
+            throw .invalidField
+        }
+        return PiBridgeHandshake(
+            extensionVersion: frame.extensionVersion,
+            piVersion: frame.piVersion,
+            instanceID: frame.instanceID,
+            processID: Int32(frame.pid),
+            sessionID: frame.sessionID,
+            sessionName: frame.sessionName,
+            reason: frame.reason,
+            workspace: frame.cwd,
+            modelProvider: frame.modelProvider,
+            modelID: frame.modelID,
+            thinkingLevel: frame.thinking,
+            isIdle: frame.isIdle,
+            outcome: frame.outcome,
+            activities: frame.activities,
+            availableModels: frame.availableModels
+        )
+    }
+
+    private static func validIdentifier(_ value: String) -> Bool {
+        !value.isEmpty
+            && value.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && !value.contains(where: \.isNewline)
+    }
+
+    private static func validPath(_ value: String) -> Bool {
+        !value.isEmpty
+            && value.utf8.count <= PiBrokerProtocolBounds.maximumPathUTF8Bytes
+            && !value.contains("\0")
+    }
+
+    private static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
+        let lhsBytes = Array(lhs.utf8)
+        let rhsBytes = Array(rhs.utf8)
+        var difference = UInt(lhsBytes.count ^ rhsBytes.count)
+        let count = max(lhsBytes.count, rhsBytes.count)
+        for index in 0..<count {
+            let left = index < lhsBytes.count ? lhsBytes[index] : 0
+            let right = index < rhsBytes.count ? rhsBytes[index] : 0
+            difference |= UInt(left ^ right)
+        }
+        return difference == 0
+    }
+}
+
+private struct WireHandshake: Decodable {
+    let type: String
+    let protocolVersion: Int
+    let generation: UUID
+    let secret: String
+    let extensionVersion: String
+    let piVersion: String
+    let instanceID: String
+    let pid: Int
+    let sessionID: String
+    let sessionName: String?
+    let reason: String
+    let cwd: String
+    let modelProvider: String
+    let modelID: String
+    let thinking: String
+    let isIdle: Bool?
+    let outcome: PiBridgeRunOutcome?
+    let activities: [PiBridgeActivity]
+    let availableModels: [PiBridgeModelOption]
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case protocolVersion = "protocol"
+        case generation
+        case secret
+        case extensionVersion
+        case piVersion
+        case instanceID = "instanceId"
+        case pid
+        case sessionID = "sessionId"
+        case sessionName
+        case reason
+        case cwd
+        case modelProvider
+        case modelID = "modelId"
+        case thinking
+        case isIdle
+        case outcome
+        case activities
+        case availableModels
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        type = try values.decode(String.self, forKey: .type)
+        protocolVersion = try values.decode(Int.self, forKey: .protocolVersion)
+        generation = try values.decode(UUID.self, forKey: .generation)
+        secret = try values.decode(String.self, forKey: .secret)
+        extensionVersion = try values.decode(String.self, forKey: .extensionVersion)
+        piVersion = try values.decode(String.self, forKey: .piVersion)
+        instanceID = try values.decode(String.self, forKey: .instanceID)
+        pid = try values.decode(Int.self, forKey: .pid)
+        sessionID = try values.decode(String.self, forKey: .sessionID)
+        sessionName = try values.decodeIfPresent(String.self, forKey: .sessionName)
+        reason = try values.decode(String.self, forKey: .reason)
+        cwd = try values.decode(String.self, forKey: .cwd)
+        modelProvider = try values.decode(String.self, forKey: .modelProvider)
+        modelID = try values.decode(String.self, forKey: .modelID)
+        thinking = try values.decode(String.self, forKey: .thinking)
+        isIdle = try values.decodeIfPresent(Bool.self, forKey: .isIdle)
+        outcome = try values.decodeIfPresent(PiBridgeRunOutcome.self, forKey: .outcome)
+        activities = try values.decodeIfPresent(
+            [PiBridgeActivity].self,
+            forKey: .activities
+        ) ?? []
+        availableModels = try values.decodeIfPresent(
+            [PiBridgeModelOption].self,
+            forKey: .availableModels
+        ) ?? []
+    }
+}
+
+public struct PiBridgeModelOption: Codable, Equatable, Sendable {
+    public let provider: String
+    public let modelID: String
+    public let displayName: String
+    public let thinkingLevels: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case provider
+        case modelID = "id"
+        case displayName = "name"
+        case thinkingLevels
+    }
+
+    fileprivate var isValid: Bool {
+        let validThinkingLevels = Set([
+            "off", "minimal", "low", "medium", "high", "xhigh", "max",
+        ])
+        return !provider.isEmpty
+            && provider.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && !provider.contains(where: \.isNewline)
+            && !modelID.isEmpty
+            && modelID.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && !modelID.contains(where: \.isNewline)
+            && !displayName.isEmpty
+            && displayName.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && !displayName.contains(where: \.isNewline)
+            && !thinkingLevels.isEmpty
+            && thinkingLevels.count <= 7
+            && thinkingLevels.allSatisfy {
+                validThinkingLevels.contains($0)
+            }
+    }
+}
+
+public struct PiBridgeState: Codable, Equatable, Sendable {
+    public let sessionID: String
+    public let sessionName: String?
+    public let workspace: String
+    public let isIdle: Bool
+    public let hasPendingMessages: Bool
+    public let lastEvent: String
+    public let activeToolCount: Int
+    public let modelProvider: String
+    public let modelID: String
+    public let modelName: String?
+    public let thinkingLevel: String
+    public let availableModels: [PiBridgeModelOption]
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID = "sessionId"
+        case sessionName
+        case workspace = "cwd"
+        case isIdle
+        case hasPendingMessages
+        case lastEvent
+        case activeToolCount
+        case modelProvider
+        case modelID = "modelId"
+        case modelName
+        case thinkingLevel = "thinking"
+        case availableModels
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID = try values.decode(String.self, forKey: .sessionID)
+        sessionName = try values.decodeIfPresent(String.self, forKey: .sessionName)
+        workspace = try values.decode(String.self, forKey: .workspace)
+        isIdle = try values.decode(Bool.self, forKey: .isIdle)
+        hasPendingMessages = try values.decode(Bool.self, forKey: .hasPendingMessages)
+        lastEvent = try values.decode(String.self, forKey: .lastEvent)
+        activeToolCount = try values.decode(Int.self, forKey: .activeToolCount)
+        modelProvider = try values.decode(String.self, forKey: .modelProvider)
+        modelID = try values.decode(String.self, forKey: .modelID)
+        modelName = try values.decodeIfPresent(String.self, forKey: .modelName)
+        thinkingLevel = try values.decode(String.self, forKey: .thinkingLevel)
+        availableModels = try values.decodeIfPresent(
+            [PiBridgeModelOption].self,
+            forKey: .availableModels
+        ) ?? []
+    }
+
+    fileprivate var isValid: Bool {
+        !sessionID.isEmpty
+            && sessionID.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && workspace.hasPrefix("/")
+            && workspace.utf8.count <= PiBrokerProtocolBounds.maximumPathUTF8Bytes
+            && activeToolCount >= 0
+            && activeToolCount <= 1_024
+            && !modelProvider.isEmpty
+            && !modelID.isEmpty
+            && modelProvider.utf8.count
+                <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && modelID.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && thinkingLevel.utf8.count
+                <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && availableModels.count <= 100
+            && availableModels.allSatisfy(\.isValid)
+    }
+}
+
+public struct PiBridgeEventFrame: Equatable, Sendable {
+    public let event: String
+    public let state: PiBridgeState
+    public let activity: PiBridgeActivity?
+    public let outcome: PiBridgeRunOutcome?
+}
+
+public enum PiBridgeRunOutcome: String, Codable, Equatable, Sendable {
+    case completed
+    case interrupted
+    case failed
+    case unknown
+}
+
+public struct PiBridgeActivity: Codable, Equatable, Sendable {
+    public let id: String
+    public let kind: String
+    public let text: String
+
+    fileprivate var isValid: Bool {
+        !id.isEmpty
+            && id.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && ["userMessage", "agentMessage", "toolCall"].contains(kind)
+            && text.utf8.count <= 32 * 1_024
+    }
+}
+
+public struct PiBridgeResponseFrame: Equatable, Sendable {
+    public let id: String
+    public let success: Bool
+    public let error: String?
+    public let state: PiBridgeState
+}
+
+public enum PiBrokerMessage: Equatable, Sendable {
+    case event(PiBridgeEventFrame)
+    case response(PiBridgeResponseFrame)
+}
+
+public enum PiBrokerMessageDecoder {
+    public static func decode(
+        _ data: Data
+    ) throws(PiBrokerProtocolError) -> PiBrokerMessage {
+        guard data.count <= PiBrokerProtocolBounds.maximumFrameBytes else {
+            throw .frameTooLarge
+        }
+        let type: String
+        do {
+            guard let object = try JSONSerialization.jsonObject(with: data)
+                    as? [String: Any],
+                  let candidate = object["type"] as? String else {
+                throw PiBrokerProtocolError.malformedFrame
+            }
+            type = candidate
+        } catch let error as PiBrokerProtocolError {
+            throw error
+        } catch {
+            throw .malformedFrame
+        }
+        let decoder = JSONDecoder()
+        do {
+            switch type {
+            case "event":
+                let wire = try decoder.decode(WireEvent.self, from: data)
+                guard wire.state.isValid,
+                      !wire.event.isEmpty,
+                      wire.event.utf8.count
+                        <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes,
+                      wire.activity?.isValid != false
+                else { throw PiBrokerProtocolError.invalidField }
+                return .event(.init(
+                    event: wire.event,
+                    state: wire.state,
+                    activity: wire.activity,
+                    outcome: wire.outcome
+                ))
+            case "response":
+                let wire = try decoder.decode(WireResponse.self, from: data)
+                guard wire.state.isValid,
+                      !wire.id.isEmpty,
+                      wire.id.utf8.count
+                        <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes,
+                      wire.error?.utf8.count ?? 0 <= 2_048
+                else { throw PiBrokerProtocolError.invalidField }
+                return .response(.init(
+                    id: wire.id,
+                    success: wire.success,
+                    error: wire.error,
+                    state: wire.state
+                ))
+            default:
+                throw PiBrokerProtocolError.unsupportedMessage
+            }
+        } catch let error as PiBrokerProtocolError {
+            throw error
+        } catch {
+            throw .malformedFrame
+        }
+    }
+}
+
+public enum PiBrokerCommand: Equatable, Sendable {
+    case followUp(id: String, message: String)
+    case steer(id: String, message: String)
+    case interrupt(id: String)
+    case setModel(id: String, provider: String, modelID: String)
+    case setThinking(id: String, level: String)
+
+    public var id: String {
+        switch self {
+        case let .followUp(id, _),
+             let .steer(id, _),
+             let .interrupt(id),
+             let .setModel(id, _, _),
+             let .setThinking(id, _):
+            id
+        }
+    }
+}
+
+public enum PiBrokerCommandEncoder {
+    public static func encode(
+        _ command: PiBrokerCommand
+    ) throws(PiBrokerProtocolError) -> Data {
+        var object: [String: Any] = ["id": command.id]
+        switch command {
+        case let .followUp(_, message):
+            guard validMessage(message) else { throw .invalidField }
+            object["type"] = "follow_up"
+            object["message"] = message
+        case let .steer(_, message):
+            guard validMessage(message) else { throw .invalidField }
+            object["type"] = "steer"
+            object["message"] = message
+        case .interrupt:
+            object["type"] = "interrupt"
+        case let .setModel(_, provider, modelID):
+            guard validIdentifier(provider), validIdentifier(modelID) else {
+                throw .invalidField
+            }
+            object["type"] = "set_model"
+            object["provider"] = provider
+            object["modelId"] = modelID
+        case let .setThinking(_, level):
+            guard validIdentifier(level) else { throw .invalidField }
+            object["type"] = "set_thinking"
+            object["level"] = level
+        }
+        do {
+            var data = try JSONSerialization.data(
+                withJSONObject: object,
+                options: [.sortedKeys, .withoutEscapingSlashes]
+            )
+            data.append(0x0A)
+            guard data.count <= PiBrokerProtocolBounds.maximumFrameBytes else {
+                throw PiBrokerProtocolError.frameTooLarge
+            }
+            return data
+        } catch let error as PiBrokerProtocolError {
+            throw error
+        } catch {
+            throw .malformedFrame
+        }
+    }
+
+    private static func validMessage(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.count <= 32 * 1_024
+    }
+
+    private static func validIdentifier(_ value: String) -> Bool {
+        !value.isEmpty
+            && value.utf8.count <= PiBrokerProtocolBounds.maximumIdentifierUTF8Bytes
+            && !value.contains(where: \.isNewline)
+    }
+}
+
+private struct WireEvent: Decodable {
+    let event: String
+    let state: PiBridgeState
+    let activity: PiBridgeActivity?
+    let outcome: PiBridgeRunOutcome?
+}
+
+private struct WireResponse: Decodable {
+    let id: String
+    let success: Bool
+    let error: String?
+    let state: PiBridgeState
+}

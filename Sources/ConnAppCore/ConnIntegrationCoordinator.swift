@@ -79,6 +79,7 @@ public struct ConnSessionState: Equatable, Identifiable, Sendable {
     public let session: ConnSession
     public let integration: IntegrationDescriptor
     public let freshness: IntegrationFreshness
+    public let hasCurrentAuthority: Bool
     public let actionAvailability: SessionActionAvailability
     public let attention: [ConnAttentionState]
 
@@ -86,12 +87,14 @@ public struct ConnSessionState: Equatable, Identifiable, Sendable {
         session: ConnSession,
         integration: IntegrationDescriptor,
         freshness: IntegrationFreshness,
+        hasCurrentAuthority: Bool = true,
         actionAvailability: SessionActionAvailability,
         attention: [ConnAttentionState]
     ) {
         self.session = session
         self.integration = integration
         self.freshness = freshness
+        self.hasCurrentAuthority = hasCurrentAuthority
         self.actionAvailability = actionAvailability
         self.attention = attention
     }
@@ -156,6 +159,7 @@ public actor ConnIntegrationCoordinator {
     private let bounds: ConnDomainBounds
     private let retryDelay: Duration
 
+    private var enabledIntegrationIDs: Set<IntegrationID>
     private var projections: [IntegrationID: IntegrationProjection] = [:]
     private var supervisionTasks: [IntegrationID: Task<Void, Never>] = [:]
     private var supervisionEpochs: [IntegrationID: UInt64] = [:]
@@ -167,6 +171,7 @@ public actor ConnIntegrationCoordinator {
 
     public init(
         integrations: [any ConnIntegration],
+        enabledIntegrationIDs: Set<IntegrationID>? = nil,
         checkpointStore: (any ConnProjectionCheckpointStore)? = nil,
         bounds: ConnDomainBounds = .default,
         retryDelay: Duration = .seconds(1)
@@ -181,6 +186,9 @@ public actor ConnIntegrationCoordinator {
             integrationsByID[integration.descriptor.id] = integration
         }
         self.integrations = integrationsByID
+        self.enabledIntegrationIDs = enabledIntegrationIDs.map {
+            $0.intersection(integrationsByID.keys)
+        } ?? Set(integrationsByID.keys)
         self.checkpointStore = checkpointStore
         self.bounds = bounds
         self.retryDelay = retryDelay
@@ -225,7 +233,7 @@ public actor ConnIntegrationCoordinator {
     public func start() {
         guard !started else { return }
         started = true
-        for integrationID in integrations.keys {
+        for integrationID in enabledIntegrationIDs {
             supervise(integrationID)
         }
         publish()
@@ -254,9 +262,37 @@ public actor ConnIntegrationCoordinator {
         await integration.disconnect()
         projections[integrationID]?.markStale()
         publish()
-        if started {
+        if started, enabledIntegrationIDs.contains(integrationID) {
             supervise(integrationID)
         }
+    }
+
+    public func isEnabled(_ integrationID: IntegrationID) -> Bool {
+        enabledIntegrationIDs.contains(integrationID)
+    }
+
+    public func setEnabled(
+        _ integrationID: IntegrationID,
+        _ enabled: Bool
+    ) async {
+        guard let integration = integrations[integrationID] else { return }
+        if enabled {
+            guard enabledIntegrationIDs.insert(integrationID).inserted else {
+                return
+            }
+            publish()
+            if started {
+                supervise(integrationID)
+            }
+            return
+        }
+
+        guard enabledIntegrationIDs.remove(integrationID) != nil else { return }
+        supervisionTasks.removeValue(forKey: integrationID)?.cancel()
+        supervisionEpochs.removeValue(forKey: integrationID)
+        await integration.disconnect()
+        projections[integrationID]?.markStale()
+        publish()
     }
 
     public func snapshot() -> ConnAggregateSnapshot {
@@ -276,7 +312,8 @@ public actor ConnIntegrationCoordinator {
     }
 
     public func perform(_ action: ConnAction) async -> ConnActionOutcome {
-        guard let integration = integrations[action.integrationID],
+        guard enabledIntegrationIDs.contains(action.integrationID),
+              let integration = integrations[action.integrationID],
               let projection = projections[action.integrationID] else {
             return unavailable(action, "Integration is not installed")
         }
@@ -290,14 +327,24 @@ public actor ConnIntegrationCoordinator {
         for integrationID: IntegrationID,
         sessionID: ConnSessionID? = nil
     ) async -> ConnSessionModelCatalogResult {
-        guard let integration = integrations[integrationID],
+        guard enabledIntegrationIDs.contains(integrationID),
+              let integration = integrations[integrationID],
               let projection = projections[integrationID],
-              projection.freshness == .live,
-              projection.capabilities.supports(.createSession) else {
+              projection.freshness == .live else {
             return .init(outcome: .unavailable)
         }
         guard sessionID == nil || sessionID?.integrationID == integrationID else {
             return .init(outcome: .invalidated)
+        }
+        if let sessionID {
+            guard projection.capabilities.supports(.followUp),
+                  projection.hasCurrentAuthority(for: sessionID) else {
+                return .init(outcome: .unavailable)
+            }
+        } else {
+            guard projection.capabilities.supports(.createSession) else {
+                return .init(outcome: .unavailable)
+            }
         }
         let result = await integration.sessionModels(for: sessionID)
         guard result.catalog?.integrationID == integrationID || result.catalog == nil else {
@@ -333,6 +380,7 @@ public actor ConnIntegrationCoordinator {
         guard let integration = integrations[integrationID] else { return }
 
         while started,
+              enabledIntegrationIDs.contains(integrationID),
               supervisionEpochs[integrationID] == epoch,
               !Task.isCancelled {
             do {
@@ -380,6 +428,7 @@ public actor ConnIntegrationCoordinator {
             }
 
             if Task.isCancelled || !started
+                || !enabledIntegrationIDs.contains(integrationID)
                 || supervisionEpochs[integrationID] != epoch { break }
             projections[integrationID]?.markStale()
             publish()
@@ -398,7 +447,7 @@ public actor ConnIntegrationCoordinator {
         switch action {
         case .createSession:
             return true
-        case let .open(sessionID), let .followUp(sessionID, _, _):
+        case let .followUp(sessionID, _, _):
             return projection.sessionsByID[sessionID] != nil
                 && projection.hasCurrentAuthority(for: sessionID)
         case let .steer(sessionID, runID, _),
@@ -443,7 +492,8 @@ public actor ConnIntegrationCoordinator {
         var sessionStates: [ConnSessionState] = []
 
         for integrationID in projections.keys.sorted() {
-            guard let projection = projections[integrationID],
+            guard enabledIntegrationIDs.contains(integrationID),
+                  let projection = projections[integrationID],
                   let descriptor = projection.descriptor else { continue }
             integrationStates.append(.init(
                 descriptor: descriptor,
@@ -471,6 +521,9 @@ public actor ConnIntegrationCoordinator {
                     session: session,
                     integration: descriptor,
                     freshness: projection.freshness,
+                    hasCurrentAuthority: projection.hasCurrentAuthority(
+                        for: session.id
+                    ),
                     actionAvailability: availability(
                         for: session,
                         attention: attention,
@@ -619,7 +672,6 @@ public actor ConnIntegrationCoordinator {
 
 private extension ConnActionKind {
     static let allCasesForAvailability: [ConnActionKind] = [
-        .open,
         .createSession,
         .followUp,
         .steer,

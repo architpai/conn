@@ -223,7 +223,7 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                     .font(.system(size: 16, weight: .bold))
                 Spacer()
                 Button {
-                    model.showsSessionPicker.toggle()
+                    model.toggleSessionPicker()
                 } label: {
                     Image(systemName: "line.3.horizontal.decrease.circle")
                 }
@@ -256,38 +256,59 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
         _ session: ConnSessionPresentation,
         project: String
     ) -> some View {
-        Button {
-            model.selectSession(session.id)
-        } label: {
-            HStack(alignment: .top, spacing: 9) {
-                harnessBadge(session.harness)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(session.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(2)
-                    Text(project)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Text(session.statusLabel)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(toneColor(session.tone))
+        HStack(spacing: 4) {
+            Button {
+                model.selectSession(session.id)
+            } label: {
+                HStack(alignment: .center, spacing: 9) {
+                    harnessBadge(session.harness)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(session.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(2)
+                        Text(project)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Text(session.statusLabel)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(toneColor(session.tone))
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .padding(9)
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .leading
+                )
             }
-            .padding(9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                model.selectedSessionID == session.id
-                    && !model.showsNewSessionComposer
-                    ? Color.accentColor.opacity(0.16)
-                    : Color.white.opacity(0.025),
-                in: RoundedRectangle(cornerRadius: 10)
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                "\(session.title), \(session.harness.label), \(session.statusLabel)"
             )
+
+            Button {
+                model.dismissSession(session.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .padding(.trailing, 5)
+            .buttonStyle(.plain)
+            .help("Dismiss until a new message or attention request")
+            .accessibilityLabel("Dismiss \(session.title)")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(
-            "\(session.title), \(session.harness.label), \(session.statusLabel)"
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            model.selectedSessionID == session.id
+                && !model.showsNewSessionComposer
+                ? Color.accentColor.opacity(0.16)
+                : Color.white.opacity(0.025),
+            in: RoundedRectangle(cornerRadius: 10)
         )
     }
 
@@ -299,46 +320,96 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             VStack(spacing: 0) {
                 sessionHeader(session)
                 Divider().opacity(0.35)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        if !session.attention.isEmpty {
-                            ForEach(session.attention) { attention in
-                                attentionCard(attention)
+                if session.activities.isEmpty && session.attention.isEmpty {
+                    ContentUnavailableView(
+                        "No Activity Yet",
+                        systemImage: "waveform.path",
+                        description: Text(
+                            "Conn will show bounded Harness activity here."
+                        )
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .id(session.id)
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 10) {
+                                if !session.attention.isEmpty {
+                                    ForEach(session.attention) { attention in
+                                        attentionCard(attention)
+                                    }
+                                }
+                                ForEach(session.activities.filter {
+                                    $0.activity.runID == nil
+                                }) { activity in
+                                    activityRow(activity)
+                                }
+                                ForEach(session.runs) { run in
+                                    runRow(run, sessionID: session.id)
+                                }
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id(transcriptBottomID(session.id))
                             }
+                            .padding(16)
                         }
-                        if session.activities.isEmpty && session.attention.isEmpty {
-                            ContentUnavailableView(
-                                "No Activity Yet",
-                                systemImage: "waveform.path",
-                                description: Text("Conn will show bounded Harness activity here.")
+                        .defaultScrollAnchor(.bottom, for: .initialOffset)
+                        .onChange(of: transcriptAutoScrollKey(session)) {
+                            previousKey,
+                            nextKey in
+                            guard ShellTranscriptActivityPolicy.shouldAutoScroll(
+                                previousKey: previousKey,
+                                nextKey: nextKey
+                            ) else { return }
+                            proxy.scrollTo(
+                                transcriptBottomID(session.id),
+                                anchor: .bottom
                             )
-                            .padding(.top, 80)
-                        } else {
-                            ForEach(session.runs) { run in
-                                runRow(run, sessionID: session.id)
-                            }
-                            ForEach(session.activities.filter {
-                                $0.activity.runID == nil
-                            }) { activity in
-                                activityRow(activity)
-                            }
                         }
                     }
-                    .padding(16)
+                    .id(session.id)
                 }
-                .defaultScrollAnchor(.bottom)
-                .id(session.id)
                 Divider().opacity(0.35)
                 composer(session)
             }
         } else {
-            ContentUnavailableView(
-                "No Sessions",
-                systemImage: "rectangle.stack",
-                description: Text("Conn is waiting for a qualified Integration.")
-            )
+            VStack(spacing: 14) {
+                ContentUnavailableView(
+                    model.integrations.isEmpty
+                        ? "No Integrations Enabled"
+                        : "No Sessions",
+                    systemImage: model.integrations.isEmpty
+                        ? "switch.2"
+                        : "rectangle.stack",
+                    description: Text(
+                        model.integrations.isEmpty
+                            ? "Choose Codex, Pi, or both in Settings."
+                            : "Conn is waiting for a qualified Integration."
+                    )
+                )
+                if model.integrations.isEmpty {
+                    Button("Choose Integrations") {
+                        model.showsSettings = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private func transcriptAutoScrollKey(
+        _ session: ConnSessionPresentation
+    ) -> String? {
+        ShellTranscriptActivityPolicy.autoScrollKey(
+            sessionID: session.id,
+            activities: session.state.session.activities
+        )
+    }
+
+    private func transcriptBottomID(_ sessionID: ConnSessionID) -> String {
+        "transcript-bottom|\(sessionID.integrationID.rawValue)"
+            + "|\(sessionID.upstreamID.rawValue)"
     }
 
     private func runRow(
@@ -356,15 +427,19 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
             set: { runExpansion[expansionKey] = $0 }
         )
         return DisclosureGroup(isExpanded: isExpanded) {
-            LazyVStack(alignment: .leading, spacing: 10) {
-                ForEach(run.activities) { activity in
-                    activityRow(activity)
+            if ShellTranscriptActivityPolicy.shouldRenderDetails(
+                isExpanded: isExpanded.wrappedValue
+            ) {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(run.activities) { activity in
+                        activityRow(activity)
+                    }
+                    if let workedForLabel = run.workedForLabel {
+                        runDurationFooter(workedForLabel)
+                    }
                 }
-                if let workedForLabel = run.workedForLabel {
-                    runDurationFooter(workedForLabel)
-                }
+                .padding(.top, 10)
             }
-            .padding(.top, 10)
         } label: {
             VStack(alignment: .leading, spacing: 10) {
                 if !isExpanded.wrappedValue,
@@ -448,16 +523,24 @@ public struct ConnSurfaceView<IntegrationSettingsContent: View>: View {
                 Text("\(session.workspaceLabel) · \(session.harness.label)")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                if let modelLabel = session.modelLabel {
+                    Text(modelLabel)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityLabel("Model \(modelLabel)")
+                }
             }
             Spacer()
             Text(session.statusLabel)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(toneColor(session.tone))
-            Button("Open") {
-                model.openSelectedInHarness()
+            if model.canOpenInHarness(session.id) {
+                Button("Open") {
+                    model.openSelectedInHarness()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
         .padding(14)
     }

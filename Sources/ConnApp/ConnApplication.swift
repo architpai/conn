@@ -1,10 +1,10 @@
 import AppKit
-import CoreImage
 import Darwin
 import Foundation
 import ConnAppCore
 import ConnCodexAdapter
 import ConnDomain
+import ConnPiAdapter
 import ConnUI
 
 @main
@@ -66,8 +66,9 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: ConnIntegrationCoordinator?
     private var viewModel: ConnViewModel?
     private var settingsModel: CodexIntegrationSettingsModel?
+    private var piSettingsModel: PiIntegrationSettingsModel?
     private var panelController:
-        ConnPanelController<CodexIntegrationSettingsView>?
+        ConnPanelController<ConnIntegrationSettingsView>?
     private var globalHotKey: GlobalHotKey?
     private var observers: [NSObjectProtocol] = []
 
@@ -81,6 +82,19 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             let store = try ConnProjectionCheckpointFileStore.userDefault()
+            let defaults = UserDefaults.standard
+            let hadPriorConnState = Self.hadPriorConnState(
+                defaults: defaults,
+                checkpointStore: store
+            )
+            let codexEnabled = ConnIntegrationActivationPreference(
+                defaults: defaults,
+                key: CodexIntegrationSettingsModel.enabledKey
+            ).resolve(defaultWhenAbsent: hadPriorConnState)
+            let piEnabled = ConnIntegrationActivationPreference(
+                defaults: defaults,
+                key: PiIntegrationSettingsModel.enabledKey
+            ).resolve(defaultWhenAbsent: false)
             // The old projection is disposable migration evidence. It never
             // enters the neutral decoder or v0.2 outcome baseline.
             _ = AppServerDomainCheckpointFileStore.quarantineUserDefaultCache()
@@ -97,31 +111,78 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
                 ),
                 legacyHookRetirement: Self.retireLegacyHooks
             )
+            let pi = PiExternalIntegration.userDefault(
+                enabled: piEnabled
+            )
+            var enabledIntegrationIDs: Set<IntegrationID> = []
+            if codexEnabled {
+                enabledIntegrationIDs.insert(
+                    CodexIntegrationIdentity.integrationID
+                )
+            }
+            if piEnabled {
+                enabledIntegrationIDs.insert(
+                    PiExternalIntegrationIdentity.integrationID
+                )
+            }
             let coordinator = try ConnIntegrationCoordinator(
-                integrations: [codex],
+                integrations: [codex, pi],
+                enabledIntegrationIDs: enabledIntegrationIDs,
                 checkpointStore: store
             )
-            let codexHarnessAssets = Self.registerCodexHarnessAsset().map {
+            var harnessAssets = Self.registerCodexHarnessAsset().map {
                 [CodexIntegrationIdentity.harnessID: $0]
             } ?? [:]
+            if let piHarnessAsset = Self.registerPiHarnessAsset() {
+                harnessAssets[PiExternalIntegrationIdentity.harnessID] =
+                    piHarnessAsset
+            }
+            let codexOpenAvailable = NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: "com.openai.codex"
+            ) != nil
+            let sessionOpener = AnyConnSessionOpener(
+                availability: { sessionID in
+                    sessionID.integrationID == CodexIntegrationIdentity.integrationID
+                        && codexOpenAvailable
+                        ? .available
+                        : .unavailable(
+                            reason: sessionID.integrationID.rawValue == "pi.external"
+                                ? "Exact Pi terminal activation is unavailable"
+                                : "The original Harness is unavailable"
+                        )
+                },
+                open: Self.openCodex
+            )
             let viewModel = ConnViewModel(
                 coordinator: coordinator,
-                harnessAssets: codexHarnessAssets,
-                openHarness: Self.openCodex
+                harnessAssets: harnessAssets,
+                sessionOpener: sessionOpener
             )
-            let settingsModel = CodexIntegrationSettingsModel(integration: codex)
+            let settingsModel = CodexIntegrationSettingsModel(
+                integration: codex,
+                coordinator: coordinator
+            )
+            let piSettingsModel = PiIntegrationSettingsModel(
+                integration: pi,
+                coordinator: coordinator
+            )
             let panel = ConnPanelController(model: viewModel) {
-                CodexIntegrationSettingsView(model: settingsModel)
+                ConnIntegrationSettingsView(
+                    codex: settingsModel,
+                    pi: piSettingsModel
+                )
             }
             self.coordinator = coordinator
             self.viewModel = viewModel
             self.settingsModel = settingsModel
+            self.piSettingsModel = piSettingsModel
             panelController = panel
 
             configureGlobalToggle(panel: panel, model: viewModel)
             observeSystemLifecycle(panel: panel)
             viewModel.start()
             settingsModel.refresh()
+            piSettingsModel.refresh()
         } catch {
             ConnApplication.showStartupError(
                 "The v0.2 Integration runtime could not be initialized. \(error.localizedDescription)"
@@ -135,6 +196,7 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
         globalHotKey?.invalidate()
         viewModel?.stop()
         settingsModel?.cancel()
+        piSettingsModel?.cancel()
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
@@ -144,7 +206,7 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureGlobalToggle(
-        panel: ConnPanelController<CodexIntegrationSettingsView>,
+        panel: ConnPanelController<ConnIntegrationSettingsView>,
         model: ConnViewModel
     ) {
         let hotKey = GlobalHotKey { [weak panel] in
@@ -161,7 +223,7 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func observeSystemLifecycle(
-        panel: ConnPanelController<CodexIntegrationSettingsView>
+        panel: ConnPanelController<ConnIntegrationSettingsView>
     ) {
         let workspace = NSWorkspace.shared.notificationCenter
         observers.append(workspace.addObserver(
@@ -242,58 +304,30 @@ private final class ConnAppDelegate: NSObject, NSApplicationDelegate {
 
     private static func registerCodexHarnessAsset() -> String? {
         let assetName = NSImage.Name("CodexHarness")
-        guard let applicationURL = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: "com.openai.codex"
+        guard let image = NSImage(
+            contentsOf: CodexHarnessAsset.bundledBadgeURL
         ) else { return nil }
-        let image = highResolutionOpenAIMark(applicationURL: applicationURL)
-            ?? NSWorkspace.shared.icon(forFile: applicationURL.path)
+        image.isTemplate = true
         return image.setName(assetName) ? assetName : nil
     }
 
-    private static func highResolutionOpenAIMark(
-        applicationURL: URL
-    ) -> NSImage? {
-        let iconURL = applicationURL
-            .appendingPathComponent("Contents/Resources/icon-chatgpt.png")
-        guard let source = CIImage(contentsOf: iconURL) else { return nil }
-
-        // The supplied application icon contains the OpenAI mark on a light
-        // rounded-square plate. Crop inside that plate, then map luminance to
-        // alpha so the dark mark becomes a high-resolution template image.
-        let side = min(source.extent.width, source.extent.height) * 0.68
-        let crop = CGRect(
-            x: source.extent.midX - side / 2,
-            y: source.extent.midY - side / 2,
-            width: side,
-            height: side
-        )
-        let cropped = source.cropped(to: crop)
-        guard let mask = CIFilter(
-            name: "CIColorMatrix",
-            parameters: [
-                kCIInputImageKey: cropped,
-                "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-                "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-                "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-                "inputAVector": CIVector(
-                    x: -1.0 / 3.0,
-                    y: -1.0 / 3.0,
-                    z: -1.0 / 3.0,
-                    w: 0
-                ),
-                "inputBiasVector": CIVector(x: 1, y: 1, z: 1, w: 1),
-            ]
-        )?.outputImage,
-        let rendered = CIContext().createCGImage(mask, from: crop)
-        else {
-            return nil
-        }
-
-        let image = NSImage(
-            cgImage: rendered,
-            size: NSSize(width: side, height: side)
-        )
-        image.isTemplate = true
-        return image
+    private static func hadPriorConnState(
+        defaults: UserDefaults,
+        checkpointStore: ConnProjectionCheckpointFileStore
+    ) -> Bool {
+        let hasPersistedPreferences = Bundle.main.bundleIdentifier.flatMap {
+            defaults.persistentDomain(forName: $0)
+        }?.isEmpty == false
+        let hasPersistedProjection = (try? checkpointStore.load()) != nil
+        return hasPersistedPreferences || hasPersistedProjection
     }
+
+    private static func registerPiHarnessAsset() -> String? {
+        let assetName = NSImage.Name("PiHarness")
+        guard let image = NSImage(
+            contentsOf: PiHarnessAsset.bundledBadgeURL
+        ) else { return nil }
+        return image.setName(assetName) ? assetName : nil
+    }
+
 }

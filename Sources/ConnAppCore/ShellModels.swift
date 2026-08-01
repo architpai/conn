@@ -1407,7 +1407,9 @@ public enum ShellGraphiteChromePolicy {
 }
 
 public enum ShellTranscriptActivityPolicy {
-    public static let maximumVisibleEntryCount = 40
+    public static func shouldRenderDetails(isExpanded: Bool) -> Bool {
+        isExpanded
+    }
 
     public static func segmentID(
         turnID: String?,
@@ -1455,6 +1457,31 @@ public enum ShellTranscriptActivityPolicy {
         return [threadID, tailID, tailRevision]
             .map { "\($0.utf8.count):\($0)" }
             .joined(separator: "|")
+    }
+
+    public static func autoScrollKey(
+        sessionID: ConnSessionID,
+        activities: [ConnActivity]
+    ) -> String? {
+        guard let tail = activities.last else { return nil }
+        let sessionIdentity = [
+            sessionID.integrationID.rawValue,
+            sessionID.upstreamID.rawValue,
+        ]
+        .map { "\($0.utf8.count):\($0)" }
+        .joined(separator: "|")
+        let revision = [
+            tail.status.rawValue,
+            tail.summary ?? "",
+            String(tail.observedAt.timeIntervalSince1970),
+        ]
+        .map { "\($0.utf8.count):\($0)" }
+        .joined(separator: "|")
+        return autoScrollKey(
+            threadID: sessionIdentity,
+            tailID: tail.id.rawValue,
+            tailRevision: revision
+        )
     }
 
     public static func shouldAutoScroll(

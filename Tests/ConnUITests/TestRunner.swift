@@ -9,6 +9,7 @@ private enum ConnUITestRunner {
         Phase87ShellTestCases.run(into: &suite)
         Phase115UIOverhaulTestCases.run(into: &suite)
         Phase115CompactShelfMotionTestCases.run(into: &suite)
+        await ConnSessionOpenerTestCases.run(into: &suite)
         await V02CandidateRegressionTestCases.run(into: &suite)
 
         if suite.failures.isEmpty {

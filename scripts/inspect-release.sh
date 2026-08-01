@@ -142,6 +142,44 @@ executable="$app_bundle/Contents/MacOS/Conn"
   exit 1
 }
 
+codex_resource_bundle="$app_bundle/Contents/Resources/Conn_ConnCodexAdapter.bundle"
+[[ -d "$codex_resource_bundle" && ! -L "$codex_resource_bundle" ]] || {
+  print -u2 "Conn release is missing its Codex adapter resource bundle."
+  exit 1
+}
+openai_blossom="$codex_resource_bundle/OpenAIBlossom.svg"
+[[ -s "$openai_blossom" && ! -L "$openai_blossom" ]] || {
+  print -u2 "Conn release is missing its regular official OpenAI Blossom."
+  exit 1
+}
+expected_openai_blossom_sha256="75c1e9fffa5e8c437bec1d67197a73992bca45d166c6ff23215185dea8fae92a"
+actual_openai_blossom_sha256="$(shasum -a 256 "$openai_blossom" | awk '{print $1}')"
+[[ "$actual_openai_blossom_sha256" == "$expected_openai_blossom_sha256" ]] || {
+  print -u2 "Conn release contains an unexpected OpenAI Blossom."
+  exit 1
+}
+
+pi_resource_bundle="$app_bundle/Contents/Resources/Conn_ConnPiAdapter.bundle"
+[[ -d "$pi_resource_bundle" && ! -L "$pi_resource_bundle" ]] || {
+  print -u2 "Conn release is missing its Pi adapter resource bundle."
+  exit 1
+}
+[[ -s "$pi_resource_bundle/index.ts" && ! -L "$pi_resource_bundle/index.ts" ]] || {
+  print -u2 "Conn release is missing its regular bundled Pi extension."
+  exit 1
+}
+pi_badge="$pi_resource_bundle/PiHarnessBadge.svg"
+[[ -s "$pi_badge" && ! -L "$pi_badge" ]] || {
+  print -u2 "Conn release is missing its regular official Pi harness badge."
+  exit 1
+}
+expected_pi_badge_sha256="a5624bc3b8cac94de75f6f13701eca2ad3ef67bbeba286c4af3f398806f0858a"
+actual_pi_badge_sha256="$(shasum -a 256 "$pi_badge" | awk '{print $1}')"
+[[ "$actual_pi_badge_sha256" == "$expected_pi_badge_sha256" ]] || {
+  print -u2 "Conn release contains an unexpected Pi harness badge."
+  exit 1
+}
+
 for distribution_document in LICENSE NOTICE ACKNOWLEDGEMENTS.md; do
   document_path="$app_bundle/Contents/Resources/$distribution_document"
   [[ -s "$document_path" && ! -L "$document_path" ]] || {

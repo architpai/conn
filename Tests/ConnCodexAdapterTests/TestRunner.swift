@@ -101,7 +101,9 @@ struct ConnCodexAdapterTestRunner {
                 parityAssertions == 1_451,
                 "reconciled CodexAdapter denominator remains exactly 1,451 assertions"
             )
+            CodexHarnessAssetTestCases.run(into: &suite)
             try await Phase3CodexIntegrationMappingTestCases.run(into: &suite)
+            try await CodexSessionOwnershipPolicyTestCases.run(into: &suite)
             print("V0.2 CODEX PARITY: \(parityAssertions) of 1,451 assertions")
             print(
                 "V0.2 CODEX PHASE3: "
