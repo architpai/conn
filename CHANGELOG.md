@@ -6,6 +6,8 @@ public alpha releases.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-01
+
 ### Added
 
 - An opt-in external Pi `0.83.0` Integration using Pi's standard global
@@ -187,7 +189,8 @@ Initial alpha release.
 - Ad-hoc artifacts are for local testing only; public distribution requires a
   Developer ID signature and notarization.
 
-[Unreleased]: https://github.com/architpai/conn/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/architpai/conn/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/architpai/conn/releases/tag/v0.2.1
 [0.2.0]: https://github.com/architpai/conn/releases/tag/v0.2.0
 [0.1.1]: https://github.com/architpai/conn/releases/tag/v0.1.1
 [0.1.0]: https://github.com/architpai/conn/releases/tag/v0.1.0
