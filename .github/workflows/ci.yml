@@ -39,6 +39,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Install boundary-check dependencies
+        run: brew install ripgrep
       - name: Provider boundary checks
         run: ./scripts/check-provider-boundaries.sh
       - name: Build Conn
