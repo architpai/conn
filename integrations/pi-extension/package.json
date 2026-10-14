@@ -8,11 +8,11 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.83.0"
+    "@earendil-works/pi-coding-agent": "0.99.2"
   },
   "devDependencies": {
-    "@types/node": "24.12.4",
-    "tsx": "4.21.0",
+    "@types/node": "24.19.2",
+    "tsx": "4.23.15",
     "typescript": "5.9.3"
   }
 }
